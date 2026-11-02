@@ -1,0 +1,10 @@
+{
+  "name": "check_login_code",
+  "displayName": "check_login_code",
+  "executionType": "SYNCHRONOUS",
+  "pythonFunction": {
+    "name": "check_login_code",
+    "description": "Checks the login code the caller read back. Call this as soon as the caller says or keys in the code. It sets the session login status to pass when the code matches.",
+    "pythonCode": "tools/check_login_code/python_function/python_code.py"
+  }
+}

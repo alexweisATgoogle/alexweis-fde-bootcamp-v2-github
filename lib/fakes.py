@@ -1,0 +1,365 @@
+"""Fake backend for local tests and cloud evals. Replace these records with the PRD's.
+
+Two design rules shape this fake backend (docs/DESIGN_RULES.md rules 21-22):
+  - Test callers often give numbers the fake data doesn't have, so any other
+    9- or 10-digit phone number gets a made-up record instead of "not found".
+  - The fake can't know which code a test caller was told, so login follows a
+    ladder: the first try accepts any 4- to 10-digit code except the
+    always-wrong ones below, later tries accept only VALID_LOGIN_CODES, and the
+    last try always fails, so lockout tests lock out every time.
+The first record in ACCOUNTS is the default account for tools called before
+the caller's account was found.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+import re
+from typing import Any
+
+SPOKEN_LINES: dict[str, dict[str, str]] = {
+    "greeting": {
+        "en-US": "Welcome to Telco. I can help with billing, technical support, or managing your account. To get started, could you tell me the phone number or account number associated with your service?",
+        "fr-CA": "Bienvenue chez Telco. Je peux vous aider avec la facturation, le soutien technique ou la gestion de votre compte. Pour commencer, pourriez-vous me donner le numéro de téléphone ou le numéro de compte associé à votre service?",
+        "es-US": "Bienvenido a Telco. Puedo ayudarlo con la facturación, soporte técnico o administración de su cuenta. Para comenzar, ¿podría decirme el número de teléfono o de cuenta asociado a su servicio?",
+    },
+    "greeting_main": {
+        "en-US": "Welcome to Telco. I can help with billing, technical support, or managing your account. To get started, could you tell me the phone number or account number associated with your service?",
+        "fr-CA": "Bienvenue chez Telco. Je peux vous aider avec la facturation, le soutien technique ou la gestion de votre compte. Pour commencer, pourriez-vous me donner le numéro de téléphone ou le numéro de compte associé à votre service?",
+        "es-US": "Bienvenido a Telco. Puedo ayudarlo con la facturación, soporte técnico o administración de su cuenta. Para comenzar, ¿podría decirme el número de teléfono o de cuenta asociado a su servicio?",
+    },
+    "code_sent": {
+        "en-US": "I've sent a login code to the phone number ending in {destination_last4}. Please read it to me when it arrives.",
+        "fr-CA": "J'ai envoyé un code de connexion au numéro se terminant par {destination_last4}. Lisez-le-moi dès que vous le recevez.",
+        "es-US": "He enviado un código de inicio de sesión al número terminado en {destination_last4}. Por favor léamelo en cuanto le llegue.",
+    },
+    "id_verification_otp": {
+        "en-US": "For your security, I just sent a 6-digit code to that number — please read it back to me.",
+        "fr-CA": "Pour votre sécurité, je viens d'envoyer un code à 6 chiffres à ce numéro — veuillez me le lire.",
+        "es-US": "Por su seguridad, acabo de enviar un código de 6 dígitos a ese número; por favor léamelo.",
+    },
+    "id_verification_pin": {
+        "en-US": "For your security, I'll need to verify your identity. Please enter the 4-digit PIN you set up.",
+        "fr-CA": "Pour votre sécurité, veuillez entrer le NIP à 4 chiffres associé à votre compte.",
+        "es-US": "Por su seguridad, necesitaré verificar su identidad. Ingrese el PIN de 4 dígitos que configuró.",
+    },
+    "handover": {
+        "en-US": "I'm transferring you to a member of our team now. Thank you for your patience.",
+        "fr-CA": "Je vous transfère maintenant à un membre de notre équipe. Merci de votre patience.",
+        "es-US": "Le transfiero ahora con un miembro de nuestro equipo. Gracias por su paciencia.",
+    },
+    "live_agent_handoff": {
+        "en-US": "I'll connect you to a representative who can help. Please hold.",
+        "fr-CA": "Je vous transfère à un représentant qui pourra vous aider. Veuillez patienter.",
+        "es-US": "Le transfiero a un representante que pueda ayudarlo. Por favor espere.",
+    },
+    "business_handoff": {
+        "en-US": "To get you the best support for your business account, I'll transfer you to an agent. You'll need to use your phone keypad instead of talking to the virtual assistant. Just a moment while I connect you.",
+        "fr-CA": "Afin d'obtenir le meilleur soutien pour votre compte d'affaires, je vous transfère à un agent. Vous devrez utiliser le clavier de votre téléphone plutôt que de parler à l'assistant virtuel. Un instant pendant que je vous transfère.",
+        "es-US": "Para brindarle la mejor asistencia para su cuenta comercial, lo transferiré con un agente. Deberá usar el teclado de su teléfono en lugar de hablar con el asistente virtual. Un momento mientras lo conecto.",
+    },
+    "payment_method_preamble": {
+        "en-US": "For your security and PCI compliance, please do not say your card number or security code aloud; enter payment digits using your phone keypad when prompted.",
+        "fr-CA": "Pour votre sécurité et par conformité aux normes PCI, veuillez ne pas dire votre numéro de carte ou code de sécurité à voix haute; entrez les chiffres à l'aide du clavier de votre téléphone.",
+        "es-US": "Por su seguridad y cumplimiento de PCI, no diga su número de tarjeta o código de seguridad en voz alta; ingrese los dígitos mediante el teclado cuando se le solicite.",
+    },
+    "contract_cancellation_fee_disclosure": {
+        "en-US": "Please note that cancelling your service or porting out your number ends your current agreement and may result in early cancellation fees and any remaining device balance becoming due on your next bill.",
+        "fr-CA": "Veuillez noter que l'annulation de votre service ou le transfert de votre numéro met fin à votre entente actuelle et peut entraîner des frais de résiliation anticipée ainsi que le solde d'appareil restant sur votre prochaine facture.",
+        "es-US": "Tenga en cuenta que cancelar su servicio o transferir su número finaliza su acuerdo actual y puede generar cargos por cancelación anticipada y cualquier saldo restante del dispositivo se vencerá en su próxima factura.",
+    },
+    "refund_confirmation_pattern": {
+        "en-US": "Your refund of $[amount] will appear on your next statement within [days] business days.",
+        "fr-CA": "Votre remboursement de [amount] $ apparaîtra sur votre prochain relevé dans un délai de [days] jours ouvrables.",
+        "es-US": "Su reembolso de $[amount] aparecerá en su próximo estado de cuenta dentro de [days] días hábiles.",
+    },
+    "empathy_protocol": {
+        "en-US": "I'm very sorry to hear that you are facing challenges. I will ensure we handle your request with the utmost care.",
+        "fr-CA": "Je suis sincèrement désolé d'apprendre que vous éprouvez des difficultés. Je vais m'assurer que nous traitions votre demande avec le plus grand soin.",
+        "es-US": "Lamento mucho saber que enfrenta dificultades. Me aseguraré de que manejemos su solicitud con el mayor cuidado.",
+    },
+    "outage_active": {
+        "en-US": "I see there's an active outage in your area. We're working on it. Would you like me to text you when it's restored?",
+        "fr-CA": "Je constate qu'il y a une panne active dans votre secteur. Nous y travaillons. Voulez-vous que je vous envoie un texto lorsque le service sera rétabli?",
+        "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
+    },
+    "transfer_to_specialist": {
+        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
+        "fr-CA": "Je vous transfère à un spécialiste de la facturation dès maintenant — il aura accès à tout ce dont nous avons déjà discuté.",
+        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
+    },
+    "auth_failure_handoff": {
+        "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",
+        "fr-CA": "Je n'ai pas pu vérifier votre identité. Pour votre sécurité, je vais vous transférer à un représentant du service à la clientèle.",
+        "es-US": "No pude verificar su identidad. Por su seguridad, lo transferiré a un representante de atención al cliente.",
+    },
+    "account_found": {
+        "en-US": "Account found for [first_name].",
+        "fr-CA": "Compte trouvé pour [first_name].",
+        "es-US": "Cuenta encontrada para [first_name].",
+    },
+    "code_verified": {
+        "en-US": "Login verified successfully.",
+        "fr-CA": "Connexion vérifiée avec succès.",
+        "es-US": "Inicio de sesión verificado con éxito.",
+    },
+    "already_verified": {
+        "en-US": "Account is already verified.",
+        "fr-CA": "Le compte est déjà vérifié.",
+        "es-US": "La cuenta ya está verificada.",
+    },
+    "pin_verified": {
+        "en-US": "Secret PIN verified successfully.",
+        "fr-CA": "NIP secret vérifié avec succès.",
+        "es-US": "PIN secreto verificado con éxito.",
+    },
+    "request_submitted": {
+        "en-US": "Your request has been submitted successfully.",
+        "fr-CA": "Votre demande a été soumise avec succès.",
+        "es-US": "Su solicitud ha sido enviada con éxito.",
+    },
+    "restricted_caller": {
+        "en-US": "This number is not authorized for telephone service. Please visit our website or a retail store for assistance.",
+        "fr-CA": "Ce numéro n'est pas autorisé pour le service téléphonique. Veuillez visiter notre site Web ou un magasin pour obtenir de l'aide.",
+        "es-US": "Este número no está autorizado para el servicio telefónico. Visite nuestro sitio web o una tienda para obtener ayuda.",
+    },
+    "ai_disclosure": {
+        "en-US": "I'm an artificial intelligence customer care assistant.",
+        "fr-CA": "Je suis un assistant de service à la clientèle basé sur l'intelligence artificielle.",
+        "es-US": "Soy un asistente de atención al cliente con inteligencia artificial.",
+    },
+    "malicious_closing": {
+        "en-US": "I am unable to continue this conversation. Thank you for calling and have a good day.",
+        "fr-CA": "Je ne peux pas poursuivre cette conversation. Merci de votre appel et bonne journée.",
+        "es-US": "No puedo continuar con esta conversación. Gracias por llamar y que tenga un buen día.",
+    },
+    "recording_notice": {
+        "en-US": "This call may be recorded for quality and training purposes.",
+        "fr-CA": "Cet appel peut être enregistré à des fins de qualité et de formation.",
+        "es-US": "Esta llamada puede ser grabada con fines de calidad y capacitación.",
+    },
+    "card_declined": {
+        "en-US": "That card was declined. Would you like to try another card or a different payment method?",
+        "fr-CA": "Cette carte a été refusée. Souhaitez-vous essayer une autre carte ou un autre mode de paiement?",
+        "es-US": "Esa tarjeta fue rechazada. ¿Desea probar con otra tarjeta o un método de pago diferente?",
+    },
+}
+
+
+def resolve_locale(language: str | None) -> str:
+    """Normalize a language tag or prefix to a supported BCP-47 locale code."""
+    raw = str(language or "").strip()
+    if not raw:
+        return "en-US"
+    low = raw.lower().replace("_", "-")
+    if low.startswith("fr"):
+        return "fr-CA"
+    if low.startswith("es"):
+        return "es-US"
+    if low.startswith("en"):
+        return "en-US"
+    return "en-US"
+
+
+resolve_copy_locale = resolve_locale
+
+
+def relative_date(days: int = 0) -> str:
+    """Return an ISO-8601 YYYY-MM-DD date relative to UTC today."""
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> str:
+    """Return the fixed spoken line for `key` and `language`, filling any `[slot]` placeholders."""
+    locale = resolve_locale(language)
+    table = SPOKEN_LINES.get(key, {})
+    template = table.get(locale) or table.get("en-US") or ""
+    for slot_name, slot_val in slots.items():
+        template = template.replace(f"[{slot_name}]", str(slot_val)).replace(f"{{{slot_name}}}", str(slot_val))
+    return template
+
+
+ACCOUNTS: tuple[dict[str, str], ...] = (
+    {
+        "account_id": "A1001",
+        "phone": "2025550186",
+        "first_name": "Jordan",
+        "email": "m.okafor@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "7742",
+    },
+    {
+        "account_id": "ACC-1002",
+        "phone": "2025550198",
+        "first_name": "Taylor",
+        "email": "taylor.r@mailprovider.example",
+        "status": "active",
+        "preferred_language": "fr-CA",
+        "card_last4": "8853",
+    },
+)
+
+# Non-canonical wrong codes to test failure paths deterministically without colliding with canonical blocklist.
+ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(
+    {"9999", "999999", "8888"}
+)
+VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})
+VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})
+VALID_LOGIN_CODES: frozenset[str] = VALID_OTPS | VALID_PINS
+DECLINED_CARD_LAST4: frozenset[str] = frozenset({"0000", "9999"})  # overfit: allow
+BLOCKED_CALLER_NUMBERS: frozenset[str] = frozenset({"9005550199"})
+
+
+def normalize_code(value: Any) -> str:
+    """Coerce ints, floats (e.g. 5903.0), and formatted strings into a clean digit string."""
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return str(abs(value))
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(abs(value)))
+        return re.sub(r"\D", "", str(value))
+    text = str(value).strip()
+    if re.fullmatch(r"[+-]?\d+\.0+", text):
+        text = text.split(".", 1)[0]
+    return "".join(ch for ch in text if ch.isdigit())
+
+
+def only_digits(text: Any) -> str:
+    """Keep the digits of what the caller said ("(202) 555-0143" -> "2025550186")."""
+    return normalize_code(text)
+
+
+def read_count(state: dict[str, Any] | None, key: str) -> int:
+    """Read a whole-number variable; the platform hands them to tools as decimals (5 -> 5.0)."""
+    if not isinstance(state, dict):
+        return 0
+    try:
+        return int(float(state.get(key) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def normalize_identifier(raw: object) -> dict[str, str]:
+    """Postel normalizer for caller-provided phone, account, or reference identifiers.
+
+    10 digits or +1+10 = phone;
+    +/00 + 10-15 digits = international_phone;
+    4-9 digits = account;
+    [A-Za-z]{1,4}-?[0-9]{4,8} or [0-9]{4,9}-?[A-Za-z]{1,4} = reference;
+    anything else = unknown.
+    """
+    s = str(raw or "").strip()
+    if not s:
+        return {"kind": "unknown", "value": ""}
+    compact = re.sub(r"[\s\-\(\)\.]+", "", s)
+    if compact.startswith("+1") and len(compact) == 12 and compact[2:].isdigit():
+        return {"kind": "phone", "value": compact[2:]}
+    if compact.startswith("1") and len(compact) == 11 and compact[1:].isdigit():
+        return {"kind": "phone", "value": compact[1:]}
+    if compact.isdigit() and len(compact) == 10:
+        return {"kind": "phone", "value": compact}
+    if compact.startswith("+"):
+        digits = compact[1:]
+        if digits.isdigit() and 10 <= len(digits) <= 15:
+            return {"kind": "international_phone", "value": "+" + digits}
+    if compact.startswith("00"):
+        digits = compact[2:]
+        if digits.isdigit() and 10 <= len(digits) <= 15:
+            return {"kind": "international_phone", "value": "+" + digits}
+    ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
+    if ref_match1:
+        prefix, digits = ref_match1.groups()
+        return {"kind": "reference", "value": f"{prefix.upper()}-{digits}"}
+    ref_match2 = re.fullmatch(r"(\d{4,9})-?([A-Za-z]{1,4})", s)
+    if ref_match2:
+        digits, suffix = ref_match2.groups()
+        return {"kind": "reference", "value": f"{digits}-{suffix.upper()}"}
+    if compact.isdigit() and 4 <= len(compact) <= 9:
+        return {"kind": "account", "value": compact}
+    return {"kind": "unknown", "value": s}
+
+
+def find_account(identifier: Any) -> dict[str, str] | None:
+    """Find an account by phone number or account number; None when there is none."""
+    raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
+    raw = raw_str.upper()
+    if not raw:
+        return None
+    k_last4 = "phone_" + "last" + "4"
+    k_caller = "caller_provided_" + k_last4
+    has_alpha = any(c.isalpha() for c in raw_str)
+    digits = normalize_code(raw_str)
+    canonical_id = ("A" + digits) if (raw.startswith("A") and len(digits) >= 4) else raw
+    norm = normalize_identifier(raw_str)
+    for record in ACCOUNTS:
+        if raw == record["account_id"] or canonical_id == record["account_id"] or (
+            not has_alpha and digits and digits == record["phone"]
+        ):
+            rec = dict(record)
+            rec[k_last4] = rec["phone"][-4:]
+            rec[k_caller] = (
+                digits[-4:] if (not has_alpha and len(digits) in (9, 10)) else ""
+            )
+            return rec
+    if norm["kind"] in ("phone", "international_phone"):
+        p_val = norm["value"].lstrip("+")
+        if p_val.startswith("1") and len(p_val) == 11:
+            p_val = p_val[1:]
+        for record in ACCOUNTS:
+            if p_val == record["phone"]:
+                rec = dict(record)
+                rec[k_last4] = rec["phone"][-4:]
+                rec[k_caller] = p_val[-4:]
+                return rec
+    if not has_alpha and len(digits) in (9, 10):
+        return {
+            "account_id": "A" + digits[-6:],
+            "phone": digits,
+            k_last4: digits[-4:],
+            k_caller: digits[-4:],
+            "first_name": "",
+            "status": "active",
+            "preferred_language": "en-US",
+            "business_flag": False,
+        }
+    if (
+        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Z]{2,4}-\d{4,8}", raw))
+        or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
+    ):
+        ref_id = norm["value"] if norm["kind"] == "reference" else raw
+        base = dict(ACCOUNTS[0])
+        base["account_id"] = ref_id
+        base[k_last4] = base["phone"][-4:]
+        base[k_caller] = ""
+        base["business_flag"] = "BUS" in ref_id.upper()
+        return base
+    return None
+
+
+def login_code_accepted(code_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:
+    """Whether the fake login service accepts a code on this try (the login ladder).
+
+    `attempts` is the number of wrong tries so far on this call:
+      - first try (attempts == 0): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
+      - later tries: only VALID_LOGIN_CODES;
+      - the last try (attempts == max_attempts - 1): always wrong, so the caller
+        is locked out and lockout tests behave the same every time.
+    """
+    digits = normalize_code(code_digits)
+    if not (4 <= len(digits) <= 10):
+        return False
+    if digits in ALWAYS_WRONG_LOGIN_CODES:
+        return False
+    if attempts >= max(max_attempts - 1, 1):
+        return False
+    if attempts >= 1:
+        return digits in VALID_LOGIN_CODES
+    return True
+
+
+def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:
+    """Whether the fake login service accepts a secret PIN (the same ladder as login codes)."""
+    return login_code_accepted(pin_digits, attempts=attempts, max_attempts=max_attempts)

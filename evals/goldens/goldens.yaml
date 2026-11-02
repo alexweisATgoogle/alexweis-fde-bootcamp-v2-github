@@ -1,0 +1,12 @@
+goldens:
+  - id: golden_identify_and_route_en
+    cuj: CUJ-01
+    language: en-US
+    priority: P0
+    turns:
+      - user: "Hi there."
+        agent: "Hello, thanks for calling. Which phone number or account number can I look up for you?"
+      - user: "It's 202 555 0143."
+        expected_tool_calls:
+          - name: lookup_account
+        agent: "I found your account ending in 0143. What can I help you with today?"

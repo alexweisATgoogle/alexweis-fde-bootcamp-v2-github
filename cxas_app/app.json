@@ -1,0 +1,340 @@
+{
+  "name": "3f25ecc4-8951-4815-91d2-7e5611195278",
+  "displayName": "alexweis-fde-bootcamp-v2",
+  "description": "alexweis-fde-bootcamp-v2 voice and chat agent.",
+  "rootAgent": "router",
+  "globalInstruction": "global_instruction.txt",
+  "modelSettings": {
+    "model": "gemini-composite-v1",
+    "temperature": 1.0
+  },
+  "languageSettings": {
+    "defaultLanguageCode": "en-US",
+    "supportedLanguageCodes": [
+      "en-US",
+      "fr-CA"
+    ],
+    "enableMultilingualSupport": true
+  },
+  "audioProcessingConfig": {
+    "synthesizeSpeechConfigs": {
+      "en-US": {
+        "voice": "en-US-Chirp3-HD-Charon",
+        "speakingRate": 1.0
+      },
+      "fr-CA": {
+        "voice": "fr-CA-Chirp3-HD-Charon",
+        "speakingRate": 1.0
+      }
+    },
+    "bargeInConfig": {
+      "bargeInAwareness": true
+    }
+  },
+  "defaultChannelProfile": {
+    "noiseSuppressionLevel": "HIGH"
+  },
+  "loggingSettings": {
+    "evaluationAudioRecordingConfig": {
+      "gcsBucket": "gs://fde-bootcamp-eval-audio",
+      "gcsPathPrefix": "eval-audio/$session"
+    }
+  },
+  "timeZoneSettings": {
+    "timeZone": "America/New_York"
+  },
+  "variableDeclarations": [
+    {
+      "name": "account_id",
+      "description": "Account found by lookup_account. Empty until the caller is identified.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "phone_last4",
+      "description": "Last 4 digits of the account's phone number; safe to say aloud.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "caller_provided_phone_last4",
+      "description": "Last 4 digits of the phone number the caller actually gave on this call.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "auth_status",
+      "description": "Login progress: none, code_sent, pass or locked. Only check_login_code or check_secret_pin sets pass.",
+      "schema": {
+        "type": "STRING",
+        "default": "none",
+        "required": []
+      }
+    },
+    {
+      "name": "login_code_sent",
+      "description": "True once send_login_code has sent a code on the active account.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "logged_in",
+      "description": "True once check_login_code or check_secret_pin has verified the caller.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "business_flag",
+      "description": "True when the account is a business account, triggering immediate deflection.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "auth_failure_count",
+      "description": "Wrong login codes or PINs so far on this call.",
+      "schema": {
+        "type": "INTEGER",
+        "default": 0,
+        "required": []
+      }
+    },
+    {
+      "name": "login_attempts",
+      "description": "Wrong login attempts so far on this call (alias for auth_failure_count).",
+      "schema": {
+        "type": "INTEGER",
+        "default": 0,
+        "required": []
+      }
+    },
+    {
+      "name": "pin_failure_count",
+      "description": "Wrong secret PINs so far on this call.",
+      "schema": {
+        "type": "INTEGER",
+        "default": 0,
+        "required": []
+      }
+    },
+    {
+      "name": "pin_attempts",
+      "description": "Wrong secret PIN attempts so far on this call (alias for pin_failure_count).",
+      "schema": {
+        "type": "INTEGER",
+        "default": 0,
+        "required": []
+      }
+    },
+    {
+      "name": "payment_failure_count",
+      "description": "Declined payment attempts so far on this call.",
+      "schema": {
+        "type": "INTEGER",
+        "default": 0,
+        "required": []
+      }
+    },
+    {
+      "name": "card_last4",
+      "description": "Last 4 digits of the active payment card on this call.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "declined_card_last4",
+      "description": "Last 4 digits of the most recently declined card on this call.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "payment_declined_once",
+      "description": "True once a payment attempt has been declined on this call.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "last_payment_method",
+      "description": "Payment method used on the most recent successful payment attempt.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "mock_error",
+      "description": "Optional simulated backend error code for deterministic testing.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "is_blocked",
+      "description": "True when the caller phone number is on the blocked callers list.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "language",
+      "description": "Active BCP-47 language code for the call (en-US, fr-CA, es-US). Empty until detected or set.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "preferred_language",
+      "description": "Preferred language code on the caller's profile or detected from utterances.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "last_user_utterance",
+      "description": "Most recent user utterance text, when available.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "handoff_reason",
+      "description": "Reason recorded when handing the caller over to a person.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "handoff_status",
+      "description": "Handoff status: completed_via_specialist_queue when handover_to_person has run.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "handover_complete",
+      "description": "True once handover_to_person has run on this call.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "handoff_message",
+      "description": "Exact localized handover sentence to speak before ending the session.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "last_tracking_id",
+      "description": "Most recent reference number returned by a tool.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "request_summary",
+      "description": "Summary of the most recent submitted request.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "service_restored",
+      "description": "True once service has been restored.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "status",
+      "description": "Account status (e.g. active, suspended).",
+      "schema": {
+        "type": "STRING",
+        "default": "active",
+        "required": []
+      }
+    },
+    {
+      "name": "autopay_enrolled",
+      "description": "True once caller has enrolled in autopay.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "appointment_rescheduled",
+      "description": "True once an appointment has been rescheduled.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "service_cancelled",
+      "description": "True once a service line or account cancellation is processed.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    }
+  ],
+  "guardrails": [
+    "Default Safety Guardrail",
+    "Default Prompt Guardrail"
+  ]
+}

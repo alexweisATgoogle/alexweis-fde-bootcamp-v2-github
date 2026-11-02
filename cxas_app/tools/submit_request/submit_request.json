@@ -1,0 +1,10 @@
+{
+  "name": "submit_request",
+  "displayName": "submit_request",
+  "executionType": "SYNCHRONOUS",
+  "pythonFunction": {
+    "name": "submit_request",
+    "description": "Records the caller's request on their account and returns a reference number. Call this only after the caller has confirmed the request; it refuses with error NOT_LOGGED_IN until the caller has passed login.",
+    "pythonCode": "tools/submit_request/python_function/python_code.py"
+  }
+}

@@ -1,0 +1,100 @@
+tests:
+  - id: tt_lookup_account_found
+    tool: lookup_account
+    args:
+      phone_or_account: "202 555 0186"
+    expected_status: ok
+    expected_fields:
+      first_name: Jordan
+      phone_last4: "0186"
+    expected_state:
+      account_id: A1001
+    forbidden_substrings:
+      - "2025550186"
+  - id: tt_lookup_account_not_found
+    tool: lookup_account
+    args:
+      phone_or_account: "123"
+    expected_status: error
+    expected_error: NOT_FOUND
+  - id: tt_send_login_code_masks_the_destination
+    tool: send_login_code
+    args: {}
+    initial_state:
+      account_id: A1001
+      phone_last4: "0186"
+      auth_status: none
+      auth_failure_count: 0
+    expected_status: ok
+    expected_fields:
+      sent: true
+      destination_last4: "0186"
+    expected_state:
+      auth_status: code_sent
+  - id: tt_check_login_code_wrong_code
+    tool: check_login_code
+    args:
+      code: "999999"
+    initial_state:
+      account_id: A1001
+      auth_status: code_sent
+      auth_failure_count: 0
+    expected_status: error
+    expected_error: WRONG_CODE
+    expected_state:
+      auth_failure_count: 1
+  - id: tt_check_secret_pin_ok
+    tool: check_secret_pin
+    args:
+      pin: "5903"
+    initial_state:
+      account_id: A1001
+      auth_status: none
+      pin_failure_count: 0
+    expected_status: ok
+    expected_fields:
+      verified: true
+    expected_state:
+      auth_status: pass
+  - id: tt_submit_request_after_login
+    tool: submit_request
+    args:
+      summary: Mail a paper copy of the last statement
+    setup:
+      - tool: lookup_account
+        args:
+          phone_or_account: "202 555 0186"
+        expected_fields:
+          first_name: Jordan
+      - tool: send_login_code
+        args: {}
+        expected_fields:
+          sent: true
+      - tool: check_login_code
+        args:
+          code: "271846"
+        expected_fields:
+          verified: true
+    expected_status: ok
+    expected_fields:
+      submitted: true
+  - id: tt_submit_request_needs_login
+    tool: submit_request
+    args:
+      summary: Mail a paper copy of the last statement
+    initial_state:
+      account_id: A1001
+      auth_status: none
+    expected_status: error
+    expected_error: NOT_LOGGED_IN
+  - id: tt_handover_to_person_fr
+    tool: handover_to_person
+    args:
+      reason: "besoin d'un agent"
+      language: "fr-CA"
+    expected_status: ok
+    expected_fields:
+      handoff_status: completed_via_specialist_queue
+      language: fr-CA
+    expected_state:
+      handover_complete: true

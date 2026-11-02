@@ -1,0 +1,30 @@
+{
+  "name": "83ac51ee-1fe9-4c25-b885-fa7f1f7a4f0f",
+  "displayName": "Default Safety Guardrail",
+  "enabled": true,
+  "action": {
+    "generativeAnswer": {
+      "prompt": "Active caller language locale: {language}. Reply in the exact same language the caller is using ({language}: French when fr-CA or fr-FR, English otherwise; never reply in English when {language} starts with fr). Output one brief, polite sentence in {language} stating that you cannot fulfill that request and asking how else you may assist with their account."
+    }
+  },
+  "modelSafety": {
+    "safetySettings": [
+      {
+        "category": "HARM_CATEGORY_HATE_SPEECH",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+      },
+      {
+        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+      },
+      {
+        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+      },
+      {
+        "category": "HARM_CATEGORY_HARASSMENT",
+        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+      }
+    ]
+  }
+}
