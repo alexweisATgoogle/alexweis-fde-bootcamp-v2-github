@@ -90,3 +90,20 @@ def test_login_ladder_for_codes_and_secret_pins() -> None:
     assert not secret_pin_accepted("5903", attempts=2)
     assert not login_code_accepted("12")
     assert all(not login_code_accepted(code) for code in ALWAYS_WRONG_LOGIN_CODES)
+
+
+def test_login_ladder_extended_invariants() -> None:
+    expected_wrong = {"0000", "000000", "1111", "111111", "9999", "999999", "8888"}
+    assert expected_wrong == ALWAYS_WRONG_LOGIN_CODES
+    for c in expected_wrong:
+        assert not login_code_accepted(c, attempts=0)
+        assert not secret_pin_accepted(c, attempts=0)
+
+    # Secret PIN 2nd attempt leniency with synthetic values
+    assert secret_pin_accepted("6472", attempts=1) is True
+    assert secret_pin_accepted("8392", attempts=1) is True
+
+    # Secret PIN 3rd attempt lockout
+    assert secret_pin_accepted("5903", attempts=2) is False
+    assert secret_pin_accepted("5678", attempts=2) is False
+

@@ -535,7 +535,7 @@ def ok_reply(  # pragma: no cover
     return reply
 
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
-    {"9999", "999999", "8888"}
+    {"9999", "999999", "8888"} | {c * n for c in ("0", "1") for n in (4, 6)}
 )
 
 def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover

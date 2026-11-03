@@ -1,14 +1,14 @@
 {
   "label": "m2-iter1-smoke16",
   "timestamp": "2026-11-03T16:23:07Z",
-  "commit": "5623261",
-  "git_sha": "5623261",
+  "commit": "71ae156",
+  "git_sha": "71ae156",
   "commits": [
     "71ae156"
   ],
   "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
   "app_versions": [
-    "(draft)"
+    "c09fb544-78ca-4d9f-b914-27f7c3e350de"
   ],
   "evaluation_runs": [
     "0988d038-487f-49c0-9458-e4dd1ea2d121"

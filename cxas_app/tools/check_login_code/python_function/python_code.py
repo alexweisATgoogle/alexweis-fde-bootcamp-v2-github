@@ -482,7 +482,7 @@ def locked_reply(reference: str, attempts: int = MAX_LOGIN_ATTEMPTS) -> dict[str
     )
 
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
-    {"9999", "999999", "8888"}
+    {"9999", "999999", "8888"} | {c * n for c in ("0", "1") for n in (4, 6)}
 )
 
 VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})  # pragma: no cover

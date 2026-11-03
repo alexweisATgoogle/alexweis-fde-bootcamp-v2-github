@@ -849,6 +849,18 @@ def lookup_account_impl(  # pragma: no cover
     state["phone_last4"] = account["phone"][-4:]
     state["past_due_balance"] = float(account.get("past_due_balance", 85.50))
     state["card_last4"] = str(account.get("card_last4", "7742"))
+    raw_digits = only_digits(raw_ident)
+    is_account_ident = (
+        raw_ident.upper().startswith("ACC-")
+        or (not any(c.isalpha() for c in raw_ident) and len(raw_digits) == 9)
+        or any(raw_ident == record["account_id"] for record in ACCOUNTS)
+    )
+    if is_account_ident or any(raw_digits == record["phone"] for record in ACCOUNTS):
+        state["destination_phone"] = account["phone"]
+    elif len(raw_digits) == 10:
+        state["destination_phone"] = raw_digits
+    else:
+        state["destination_phone"] = account["phone"]
     ident = normalize_identifier(raw_ident)
     if ident["kind"] in ("phone", "international_phone"):
         caller_digits = only_digits(ident["value"])

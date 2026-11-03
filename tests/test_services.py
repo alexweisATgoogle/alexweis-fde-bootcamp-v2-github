@@ -504,4 +504,65 @@ def test_check_login_code_retry_pin_fallback() -> None:
     assert st["logged_in"] is True
 
 
+def test_card_last4_regex_and_overpayment_refund_synthetic() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "card_last4": "6381"}
+    summary = "Remboursement d'un double paiement sur la carte bancaire se terminant par 6381"
+    res = submit_request_impl(summary=summary, action="dispute", card_last4="6381", state=st, language="fr-CA")
+    assert res["status"] == "ok"
+    assert res["data"]["refund_approved"] is True
+    assert res["data"]["amount"] == 85.50
+    assert res["data"]["amount_display"] == "85.50"
+    assert res["data"]["days"] == 3
+
+
+def test_dispute_threshold_escalation_synthetic() -> None:
+    st = {"logged_in": True, "account_id": "A1001"}
+    res = submit_request_impl(summary="Dispute fee for returned equipment", action="dispute", amount=75.0, state=st)
+    assert res["status"] == "error"
+    assert res["error"] == "LIMIT_EXCEEDED"
+    assert res["data"]["threshold"] == 25.0
+    assert res["data"]["threshold_display"] == "25.00"
+    assert res["data"]["requires_specialist"] is True
+    assert res["data"]["escalation_queue"] == "billing_specialist"
+    assert st["handoff_reason"] == "refund_threshold_exceeded"
+
+
+def test_unauthenticated_mobile_troubleshooting() -> None:
+    st = {"logged_in": False, "auth_status": "none"}
+    res = submit_request_impl("Mon mobile affiche aucun service", action="troubleshoot", service_type="mobile", state=st, language="fr-CA")
+    assert res["status"] == "ok"
+    assert res["data"]["troubleshooting_complete"] is True
+
+
+def test_port_in_defensive_routing_and_timelines() -> None:
+    st = {"logged_in": True, "account_id": "A1001"}
+    res = submit_request_impl("Transfer number from old carrier", action="warranty", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["port_in_submitted"] is True
+    assert res["data"]["porting_window"] == "2 to 4 hours"
+    assert res["data"]["active_until_cutover"] is True
+
+
+def test_cancellation_standalone_internet_pricing() -> None:
+    st = {"logged_in": True, "account_id": "A1001"}
+    res = submit_request_impl("Cancel TV keep internet", action="cancel", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["cancelled"] is True
+    assert res["data"]["standalone_internet_rate_display"] == "105.00"
+    assert res["data"]["standalone_plan_name"] == "Fiber 1.5 Gbps"
+
+
+def test_bill_breakdown_and_roaming_addons() -> None:
+    st = {"logged_in": True, "account_id": "A1001"}
+    res_bill = submit_request_impl("Check balance breakdown", action="bill_inquiry", state=st)
+    assert res_bill["status"] == "ok"
+    assert res_bill["data"]["monthly_plan_charges_display"] == "75.00"
+    assert res_bill["data"]["taxes_and_fees_display"] == "10.50"
+
+    res_plans = submit_request_impl("Mobility plans and add-ons", action="search_plans", service_type="mobility", state=st)
+    assert res_plans["status"] == "ok"
+    assert "add_ons" in res_plans["data"]
+
+
+
 

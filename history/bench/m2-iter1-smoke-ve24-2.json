@@ -1,0 +1,41 @@
+{
+  "label": "m2-iter1-smoke-ve24-2",
+  "timestamp": "2026-11-03T16:37:30Z",
+  "commit": "5623261",
+  "git_sha": "5623261",
+  "commits": [
+    "5623261"
+  ],
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "ff87af23-0203-4bfd-9d78-4dc3235fd6f4"
+  ],
+  "evaluation_runs": [
+    "b2d06909-0776-44c2-ae3d-7e9512b799ce"
+  ],
+  "runs_per_eval": 1,
+  "is_full_run": false,
+  "is_holdout": false,
+  "eval_count": 1,
+  "evals": 1,
+  "strict_pass": 0,
+  "strict_pass_rate": 0.0,
+  "majority_pass": 0,
+  "majority_pass_rate": 0.0,
+  "individual_passed": 0,
+  "individual_total": 1,
+  "passes": 0,
+  "total": 1,
+  "p": 0.0,
+  "predicted_strict_3_of_3": 0.0,
+  "avg_pass_turns": null,
+  "avg_pass_tool_calls": null,
+  "per_eval": {
+    "VE-24": {
+      "pass": 0,
+      "total": 1,
+      "infra": 0,
+      "verdict": "FAIL"
+    }
+  }
+}

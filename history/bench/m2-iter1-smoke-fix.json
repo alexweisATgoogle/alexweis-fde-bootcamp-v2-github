@@ -1,0 +1,49 @@
+{
+  "label": "m2-iter1-smoke-fix",
+  "timestamp": "2026-11-03T16:31:56Z",
+  "commit": "30edc98",
+  "git_sha": "30edc98",
+  "commits": [
+    "30edc98"
+  ],
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "53d11c7f-7a01-4e6a-ab41-2c6a206629f2"
+  ],
+  "evaluation_runs": [
+    "53d19b04-2102-4ecc-b378-6ad5a375f14d"
+  ],
+  "runs_per_eval": 1,
+  "is_full_run": false,
+  "is_holdout": false,
+  "eval_count": 2,
+  "evals": 2,
+  "strict_pass": 1,
+  "strict_pass_rate": 0.5,
+  "majority_pass": 1,
+  "majority_pass_rate": 0.5,
+  "individual_passed": 1,
+  "individual_total": 2,
+  "passes": 1,
+  "total": 2,
+  "p": 0.5,
+  "predicted_strict_3_of_3": 0.25,
+  "avg_pass_turns": 4.0,
+  "avg_pass_tool_calls": 7.0,
+  "per_eval": {
+    "VE-09": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-24": {
+      "pass": 0,
+      "total": 1,
+      "infra": 0,
+      "verdict": "FAIL"
+    }
+  }
+}

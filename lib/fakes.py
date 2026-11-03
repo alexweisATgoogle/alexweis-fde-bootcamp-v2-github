@@ -181,7 +181,7 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
 
 # Credentials & Ladder Constants
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(
-    {"9999", "999999", "8888"}
+    {"9999", "999999", "8888"} | {c * n for c in ("0", "1") for n in (4, 6)}
 )
 VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})
 VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})
@@ -334,6 +334,19 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {
             "speed_mbps": 1000,
             "download_mbps": 1000,
             "upload_mbps": 750,
+            "unlimited_data": True,
+            "data_cap": "Unlimited",
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+        },
+        {
+            "plan_id": "NET-1500",
+            "name": "Fiber 1.5 Gbps",
+            "monthly_rate": 105.0,
+            "rate_display": "105.00",
+            "speed_mbps": 1500,
+            "download_mbps": 1500,
+            "upload_mbps": 940,
             "unlimited_data": True,
             "data_cap": "Unlimited",
             "activation_fee": 0.0,

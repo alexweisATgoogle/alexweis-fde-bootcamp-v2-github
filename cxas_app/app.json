@@ -81,6 +81,15 @@
       }
     },
     {
+      "name": "destination_phone",
+      "description": "Destination phone number for SMS dispatches and notifications.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
       "name": "current_balance",
       "description": "Current total balance amount on the identified account.",
       "schema": {

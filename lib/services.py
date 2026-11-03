@@ -297,6 +297,18 @@ def lookup_account_impl(
     state["phone_last4"] = account["phone"][-4:]
     state["past_due_balance"] = float(account.get("past_due_balance", 85.50))
     state["card_last4"] = str(account.get("card_last4", "7742"))
+    raw_digits = only_digits(raw_ident)
+    is_account_ident = (
+        raw_ident.upper().startswith("ACC-")
+        or (not any(c.isalpha() for c in raw_ident) and len(raw_digits) == 9)
+        or any(raw_ident == record["account_id"] for record in ACCOUNTS)
+    )
+    if is_account_ident or any(raw_digits == record["phone"] for record in ACCOUNTS):
+        state["destination_phone"] = account["phone"]
+    elif len(raw_digits) == 10:
+        state["destination_phone"] = raw_digits
+    else:
+        state["destination_phone"] = account["phone"]
     ident = normalize_identifier(raw_ident)
     if ident["kind"] in ("phone", "international_phone"):
         caller_digits = only_digits(ident["value"])
@@ -750,7 +762,7 @@ def submit_request_impl(
 
     # 2. Password Reset (M7) — Identified only, does not require login
     if clean_action == "password_reset" or any(k in low for k in ("password", "mot de passe", "reinitialiser", "réinitialiser")):
-        p_target = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
+        p_target = str(destination_phone or state.get("destination_phone") or state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
         p_last4 = p_target[-4:]
         return ok_reply(
             {
@@ -816,9 +828,25 @@ def submit_request_impl(
     elif state.get("logged_in") is False and state.get("auth_status") != "locked":
         state["auth_status"] = "none"
 
+    is_large_dispute = False
+    if clean_action == "dispute" or any(k in low for k in ("dispute", "conteste", "refund", "remboursement")):
+        try:
+            d_amt = float(amount) if amount else 0.0
+        except (ValueError, TypeError):
+            d_amt = 0.0
+        if not math.isfinite(d_amt):
+            d_amt = 0.0
+        if d_amt <= 0.0:
+            m_amt = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
+            if m_amt:
+                d_amt = float(m_amt.group(1))
+        if d_amt > 25.0:
+            is_large_dispute = True
+
     is_unauthenticated_allowed = (
-        clean_action in ("search_plans", "troubleshoot_tv")
-        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "streaming", "tv app", "satellite")))
+        clean_action in ("search_plans", "troubleshoot", "troubleshoot_tv")
+        or is_large_dispute
+        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "streaming", "tv app", "satellite", "dépannage", "depannage", "troubleshoot", "aucun service", "no service", "réseau", "panne")))
     )
 
     if state.get("auth_status") != "pass" and not is_unauthenticated_allowed:
@@ -851,6 +879,11 @@ def submit_request_impl(
                 "current_balance_display": display_amount(cur_bal),
                 "past_due_balance": past_bal,
                 "past_due_balance_display": display_amount(past_bal),
+                "monthly_plan_charges": 75.00,
+                "monthly_plan_charges_display": "75.00",
+                "taxes_and_fees": 10.50,
+                "taxes_and_fees_display": "10.50",
+                "plan_name": "Essential Mobility 50GB",
                 "due_date": relative_date(14),
                 "last_payment_amount": 85.50,
                 "last_payment_amount_display": "85.50",
@@ -919,6 +952,12 @@ def submit_request_impl(
                 "early_cancellation_fee": 150.00,
                 "fee_display": "150.00",
                 "effective_date": relative_date(0),
+                "remaining_service": "internet",
+                "remaining_monthly_rate": 105.00,
+                "remaining_monthly_rate_display": "105.00",
+                "standalone_internet_rate": 105.00,
+                "standalone_internet_rate_display": "105.00",
+                "standalone_plan_name": "Fiber 1.5 Gbps",
             },
             reference,
             language=lang,
@@ -1118,6 +1157,9 @@ def submit_request_impl(
         )
 
     # 7b. Strict Warranty Precedence before Dispute
+    if clean_action == "warranty" and any(k in low for k in ("port", "transfer number", "old carrier", "competitor", "keep my number", "transférer numéro", "transferer numero", "conserver")):
+        clean_action = "port_in"
+
     if clean_action == "warranty" or is_safety_hazard or (
         not clean_action and any(k in low for k in ("warranty", "garantie", "defect", "defective", "remplacement appareil", "hardware", "thermal", "overheating", "surchauffe"))
     ):
@@ -1209,29 +1251,77 @@ def submit_request_impl(
             spoken_summary="Crédit de panne appliqué." if lang.startswith("fr") else "Outage credit applied.",
         )
 
-    if clean_action == "dispute" or (
-        not clean_action and any(k in low for k in ("dispute", "credit", "crédit", "refund", "remboursement", "conteste", "overcharge", "facturation", "frais incorrect"))
+    if clean_action in ("dispute", "refund_overpayment", "overpayment") or (
+        not clean_action and any(k in low for k in ("dispute", "credit", "crédit", "refund", "remboursement", "conteste", "overcharge", "facturation", "frais incorrect", "trop-perçu", "trop perçu", "double paiement", "paid twice"))
     ):
+        is_overpayment = (
+            clean_action in ("refund_overpayment", "overpayment")
+            or any(k in low for k in ("overpayment", "paid twice", "double", "trop-perçu", "trop perçu", "payé deux fois", "paye deux fois"))
+        )
+
         try:
             dispute_amt = float(amount) if amount else 0.0
         except (ValueError, TypeError):
             dispute_amt = 0.0
         if not math.isfinite(dispute_amt):
             dispute_amt = 0.0
+
+        clean_for_amt = clean_summary
+        if card_last4:
+            clean_for_amt = clean_for_amt.replace(str(card_last4), " ")
+        clean_for_amt = re.sub(
+            r"(?:ending\s+in|terminant\s+par|carte\s+bancaire|carte|card)\s*(?:se\s+terminant\s+par\s*)?(?:\D*\b)(\d{4})\b",
+            " ",
+            clean_for_amt,
+            flags=re.IGNORECASE,
+        )
+
         if dispute_amt <= 0.0:
-            amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
-            dispute_amt = float(amt_match.group(1)) if amt_match else 12.50
+            amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_for_amt)
+            if amt_match:
+                dispute_amt = float(amt_match.group(1))
+            elif is_overpayment:
+                acc_id = str(state.get("account_id") or "")
+                account = find_account(acc_id) if acc_id else None
+                dispute_amt = float(state.get("current_balance") or (account.get("current_balance", 85.50) if account else 85.50))
+            else:
+                dispute_amt = 12.50
+
+        if is_overpayment:
+            refund_days = 3
+            return ok_reply(
+                {
+                    "refund_approved": True,
+                    "amount": dispute_amt,
+                    "amount_display": display_amount(dispute_amt),
+                    "days": refund_days,
+                    "days_display": str(refund_days),
+                    "adjustment_type": "overpayment_refund",
+                    "status_code": "approved",
+                },
+                reference,
+                language=lang,
+                spoken_summary="Remboursement de trop-perçu approuvé." if lang.startswith("fr") else "Overpayment refund approved.",
+            )
+
         if dispute_amt > 25.0:
             transfer_msg = spoken_line("transfer_to_specialist", lang)
             state["handoff_message"] = transfer_msg
             state["handoff_reason"] = "refund_threshold_exceeded"
             return error_reply(
                 "LIMIT_EXCEEDED",
-                message="Dispute amount exceeds the $25.00 limit for automated adjustment.",
-                agent_action="Inform caller that refund exceeds $25 and transfer to a billing specialist.",
+                message="Dispute exceeds the $25.00 limit for automated adjustment." if not lang.startswith("fr") else "La contestation dépasse la limite de 25,00 $.",
+                agent_action="Explain requests over $25 require specialist and transfer." if not lang.startswith("fr") else "Expliquer que les demandes de plus de 25 $ requièrent un spécialiste.",
                 reference=reference,
                 language=lang,
-                data={"amount": dispute_amt, "threshold": 25.0, "requires_specialist": True},
+                data={
+                    "amount": dispute_amt,
+                    "amount_display": display_amount(dispute_amt),
+                    "threshold": 25.0,
+                    "threshold_display": "25.00",
+                    "requires_specialist": True,
+                    "escalation_queue": "billing_specialist",
+                },
             )
         refund_days = 3
         return ok_reply(
@@ -1240,8 +1330,9 @@ def submit_request_impl(
                 "amount": dispute_amt,
                 "amount_display": display_amount(dispute_amt),
                 "days": refund_days,
+                "days_display": str(refund_days),
                 "adjustment_type": "courtesy_credit",
-                "message": "Ajustement de contestation traité." if lang.startswith("fr") else "Dispute adjustment processed.",
+                "status_code": "approved",
             },
             reference,
             language=lang,
@@ -1349,16 +1440,24 @@ def submit_request_impl(
         )
 
     # 12c. Port-In Number Transfer (M5)
-    if clean_action == "port_in" or any(k in low for k in ("port in", "transfer number", "transférer numéro", "transferer numero")):
+    if clean_action == "port_in" or any(k in low for k in ("port in", "port", "transfer number", "transférer numéro", "transferer numero")):
         port_ref = "PORT-" + tracking_id("port", clean_summary)
+        is_landline = any(k in low for k in ("landline", "ligne fixe", "fixe", "home phone"))
+        porting_window = (
+            ("2 à 3 jours ouvrables" if lang.startswith("fr") else "2 to 3 business days")
+            if is_landline
+            else ("2 à 4 heures" if lang.startswith("fr") else "2 to 4 hours")
+        )
         return ok_reply(
             {
                 "port_in_submitted": True,
                 "transfer_reference": port_ref,
                 "tracking_id": port_ref,
                 "status": "pending_carrier_release",
-                "estimated_hours": 2,
-                "message": "Demande de transfert soumise." if lang.startswith("fr") else "Port-in request submitted.",
+                "porting_window": porting_window,
+                "active_until_cutover": True,
+                "keep_current_service_active": True,
+                "estimated_hours": 48 if is_landline else 2,
             },
             reference,
             language=lang,
@@ -1503,6 +1602,10 @@ def submit_request_impl(
         else:
             curated = all_mobility[1:4]
 
+        roaming_addons = [
+            {"name": "Roam Better - US", "daily_rate": 12.0, "rate_display": "12.00"},
+            {"name": "Roam Better - International", "daily_rate": 15.0, "rate_display": "15.00"},
+        ]
         return ok_reply(
             {
                 "plans": curated,
@@ -1511,6 +1614,7 @@ def submit_request_impl(
                 "activation_fee_display": "0.00",
                 "overage_policy": "No data overage fees; speeds throttled to 512 Kbps after limit",
                 "contract_term": "month-to-month",
+                "add_ons": roaming_addons,
             },
             reference,
             language=lang,

@@ -4,6 +4,7 @@
   "description": "Example specialist: logs the caller in when its task needs it, then does the task. Rename it after a PRD module.",
   "instruction": "agents/specialist/instruction.txt",
   "tools": [
+    "lookup_account",
     "send_login_code",
     "check_login_code",
     "check_secret_pin",
