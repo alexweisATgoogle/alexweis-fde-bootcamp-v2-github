@@ -507,6 +507,34 @@ def check_secret_pin_impl(
     account_id = str(state.get("account_id") or "")
     reference = tracking_id("check_secret_pin", account_id)
     state["last_tracking_id"] = reference
+    digits = normalize_code(pin)
+    verified_pin = str(state.get("verified_pin") or "")
+    if verified_pin and digits != verified_pin:
+        failures = max(read_count(state, "pin_failure_count"), read_count(state, "pin_attempts")) + 1
+        state["pin_failure_count"] = failures
+        state["pin_attempts"] = failures
+        state["auth_failure_count"] = failures
+        state["login_attempts"] = failures
+        if failures >= MAX_PIN_ATTEMPTS:
+            state["auth_status"] = "locked"
+            state["logged_in"] = False
+            return locked_reply(reference, failures)
+        state["logged_in"] = False
+        state["auth_status"] = "none"
+        remaining = MAX_PIN_ATTEMPTS - failures
+        return error_reply(
+            "WRONG_CODE",
+            "The secret PIN does not match.",
+            "Tell the caller the PIN didn't match and ask them to try again.",
+            reference,
+            data={
+                "attempts": failures,
+                "attempts_left": remaining,
+                "attempts_remaining": remaining,
+                "lockout_triggered": False,
+            },
+            language=lang,
+        )
     if state.get("auth_status") == "pass":
         state["logged_in"] = True
         return ok_reply(
@@ -525,7 +553,6 @@ def check_secret_pin_impl(
         state["auth_status"] = "locked"
         state["logged_in"] = False
         return locked_reply(reference, failures)
-    digits = normalize_code(pin)
     if not (4 <= len(digits) <= 10):
         return error_reply(
             "INVALID_INPUT",
@@ -560,6 +587,7 @@ def check_secret_pin_impl(
         )
     state["auth_status"] = "pass"
     state["logged_in"] = True
+    state["verified_pin"] = digits
     state["pin_failure_count"] = 0
     state["auth_failure_count"] = 0
     state["pin_attempts"] = 0

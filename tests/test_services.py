@@ -133,6 +133,13 @@ def test_check_secret_pin_and_payment_attempts() -> None:
     assert check_secret_pin_impl("9999", state)["error"] == "WRONG_CODE"
     assert check_secret_pin_impl("5903", state)["status"] == "ok"
     assert check_secret_pin_impl("5903", state)["status"] == "ok"
+    # Attempting different PIN after verification triggers WRONG_CODE and lockout
+    assert check_secret_pin_impl("8371", state)["error"] == "WRONG_CODE"
+    assert check_secret_pin_impl("8372", state)["error"] == "WRONG_CODE"
+    lockout_res = check_secret_pin_impl("8373", state)
+    assert lockout_res["error"] == "TOO_MANY_ATTEMPTS"
+    assert lockout_res["lockout_triggered"] is True
+    assert state["auth_status"] == "locked"
 
     pay_state: dict = {}
     assert record_payment_attempt(pay_state, False)["error"] == "CARD_DECLINED"

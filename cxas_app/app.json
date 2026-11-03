@@ -90,6 +90,15 @@
       }
     },
     {
+      "name": "verified_pin",
+      "description": "Digits of the secret PIN successfully verified during identity check.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
       "name": "current_balance",
       "description": "Current total balance amount on the identified account.",
       "schema": {
