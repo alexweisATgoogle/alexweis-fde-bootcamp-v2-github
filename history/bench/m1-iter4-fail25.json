@@ -1,0 +1,230 @@
+{
+  "label": "m1-iter4-fail25",
+  "timestamp": "2026-11-03T03:05:12Z",
+  "commit": "0a45da8",
+  "git_sha": "0a45da8",
+  "commits": [
+    "0a45da8"
+  ],
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "8c47dddf-51f8-43fe-a0e5-c171bc811d5b"
+  ],
+  "evaluation_runs": [
+    "6f62dea4-add4-4b3f-b3b5-69fd8c1c4bac"
+  ],
+  "runs_per_eval": 1,
+  "is_full_run": false,
+  "is_holdout": false,
+  "eval_count": 25,
+  "evals": 25,
+  "strict_pass": 21,
+  "strict_pass_rate": 0.84,
+  "majority_pass": 21,
+  "majority_pass_rate": 0.84,
+  "individual_passed": 21,
+  "individual_total": 25,
+  "passes": 21,
+  "total": 25,
+  "p": 0.84,
+  "predicted_strict_3_of_3": 14.82,
+  "avg_pass_turns": 4.67,
+  "avg_pass_tool_calls": 5.9,
+  "per_eval": {
+    "VE-04": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 3.0,
+      "avg_pass_tool_calls": 6.0
+    },
+    "VE-07": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-08": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-09": {
+      "pass": 0,
+      "total": 1,
+      "infra": 0,
+      "verdict": "FAIL"
+    },
+    "VE-14": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-16": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-20": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 8.0
+    },
+    "VE-24": {
+      "pass": 0,
+      "total": 1,
+      "infra": 0,
+      "verdict": "FAIL"
+    },
+    "VE-28": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 7.0,
+      "avg_pass_tool_calls": 9.0
+    },
+    "VE-30": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-32": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-34": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 1.0,
+      "avg_pass_tool_calls": 2.0
+    },
+    "VE-40": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 4.0
+    },
+    "VE-41": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-43": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 4.0
+    },
+    "VE-44": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 10.0,
+      "avg_pass_tool_calls": 9.0
+    },
+    "VE-49": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 3.0,
+      "avg_pass_tool_calls": 6.0
+    },
+    "VE-54": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-56": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-57": {
+      "pass": 0,
+      "total": 1,
+      "infra": 0,
+      "verdict": "FAIL"
+    },
+    "VE-59": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 6.0
+    },
+    "VE-60": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 6.0,
+      "avg_pass_tool_calls": 6.0
+    },
+    "VE-61": {
+      "pass": 0,
+      "total": 1,
+      "infra": 0,
+      "verdict": "FAIL"
+    },
+    "VE-63": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-67": {
+      "pass": 1,
+      "total": 1,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 7.0,
+      "avg_pass_tool_calls": 4.0
+    }
+  },
+  "tool_errors": 0,
+  "tool_error_pages_checked": 4,
+  "tool_error_samples": []
+}
