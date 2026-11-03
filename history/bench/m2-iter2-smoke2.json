@@ -1,0 +1,98 @@
+{
+  "label": "m2-iter2-smoke2",
+  "timestamp": "2026-11-03T18:34:45Z",
+  "commit": "09639da",
+  "git_sha": "09639da",
+  "commits": [
+    "09639da"
+  ],
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "8b4c7fbc-7f70-4668-883d-72afb62b956e"
+  ],
+  "evaluation_runs": [
+    "78d1dde5-0f42-4218-9e7a-12c71ffff5c6"
+  ],
+  "runs_per_eval": 3,
+  "is_full_run": false,
+  "is_holdout": false,
+  "eval_count": 8,
+  "evals": 8,
+  "strict_pass": 3,
+  "strict_pass_rate": 0.375,
+  "majority_pass": 4,
+  "majority_pass_rate": 0.5,
+  "individual_passed": 13,
+  "individual_total": 24,
+  "passes": 13,
+  "total": 24,
+  "p": 0.5417,
+  "predicted_strict_3_of_3": 1.27,
+  "avg_pass_turns": 4.39,
+  "avg_pass_tool_calls": 6.28,
+  "per_eval": {
+    "VE-03": {
+      "pass": 1,
+      "total": 3,
+      "infra": 0,
+      "verdict": "FAIL",
+      "avg_pass_turns": 3.0,
+      "avg_pass_tool_calls": 3.0
+    },
+    "VE-09": {
+      "pass": 3,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 8.0
+    },
+    "VE-12": {
+      "pass": 1,
+      "total": 3,
+      "infra": 0,
+      "verdict": "FAIL",
+      "avg_pass_turns": 3.0,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-17": {
+      "pass": 2,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.0,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-24": {
+      "pass": 0,
+      "total": 3,
+      "infra": 0,
+      "verdict": "FAIL"
+    },
+    "VE-25": {
+      "pass": 0,
+      "total": 3,
+      "infra": 0,
+      "verdict": "FAIL"
+    },
+    "VE-28": {
+      "pass": 3,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 6.33,
+      "avg_pass_tool_calls": 9.33
+    },
+    "VE-41": {
+      "pass": 3,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 5.33
+    }
+  },
+  "tool_errors": 0,
+  "tool_error_pages_checked": 11,
+  "tool_error_samples": []
+}
