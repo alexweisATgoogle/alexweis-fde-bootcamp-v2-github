@@ -615,7 +615,6 @@ def record_payment_attempt(
         )
     remaining = MAX_PAYMENT_ATTEMPTS - failures
     err_code = "CARD_DECLINED" if method == "card" else "PAYMENT_DECLINED"
-    decline_summary = spoken_line("card_declined", lang)
     status_desc = "Paiement refusé." if lang.startswith("fr") else "Card declined."
     err_msg = "La carte a été refusée." if lang.startswith("fr") else "The card was declined."
     action_msg = (
@@ -691,7 +690,15 @@ def submit_request_impl(
             state["phone_last4"] = p_digits[-4:]
 
     # 1. Outage Check (M4) — Information inquiry, does not require login
-    if (clean_action == "outage_check" or any(k in low for k in ("outage", "panne", "service alert", "panne de service")) or (postal_code and len(postal_code) >= 3)) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
+    if (
+        clean_action == "outage_check"
+        or (
+            any(k in low for k in ("outage", "panne", "service alert", "panne de service"))
+            and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund")
+            and not (days not in ("", None, 0, "0"))
+        )
+        or (postal_code and len(postal_code) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund"))
+    ) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
         if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular", "cell phone", "données mobiles")):
             return ok_reply(
                 {
@@ -756,7 +763,7 @@ def submit_request_impl(
         )
 
     # 3. Open Support Ticket Status (M6) — Information inquiry, does not require login
-    if clean_action == "check_ticket" or any(k in low for k in ("ticket", "billet")):
+    if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
         tid_match = re.search(r"\b(T\d{5})\b", clean_summary.upper())
         tid = tid_match.group(1) if tid_match else "T88219"
         ticket = TICKETS.get(tid, TICKETS["T88219"])
@@ -768,6 +775,7 @@ def submit_request_impl(
                 "ticket_id": ticket["ticket_id"],
                 "status": status_lbl,
                 "eta": eta,
+                "estimated_resolution_time": eta,
                 "service_type": ticket["service_type"],
                 "description": desc,
             },
@@ -777,7 +785,7 @@ def submit_request_impl(
         )
 
     # 4. Technician Appointment Arrival Status (M6) — Information inquiry without reschedule/cancel
-    if (clean_action == "check_appointment" or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
+    if (clean_action in ("check_appointment", "appointment_status") or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
         acc_id = str(state.get("account_id") or "A1001")
         appt = APPOINTMENTS.get(acc_id, APPOINTMENTS["A1001"])
         if lang.startswith("fr"):
@@ -989,6 +997,40 @@ def submit_request_impl(
             spoken_summary="Entente de paiement confirmée." if lang.startswith("fr") else "Payment arrangement confirmed.",
         )
 
+    # 6c. Check Balance / Bill Inquiry (M3)
+    if clean_action in ("check_balance", "view_balance", "balance_inquiry", "get_balance", "bill_inquiry") or (
+        clean_action == "pay_bill"
+        and any(k in low for k in ("check balance", "view balance", "what is the balance", "inquire balance", "vérifier le solde", "consulter le solde", "quel est le solde"))
+        and not any(k in low for k in ("pay now", "process payment", "proceed with payment", "payer maintenant", "confirmer le paiement"))
+    ):
+        acc_id = str(state.get("account_id") or "")
+        account = find_account(acc_id) if acc_id else None
+        raw_bal = state.get("past_due_balance")
+        if raw_bal is None:
+            current_bal = float(account.get("past_due_balance", 85.50)) if account else 85.50
+        else:
+            try:
+                current_bal = float(raw_bal)
+            except (ValueError, TypeError):
+                current_bal = 85.50
+        if not math.isfinite(current_bal):
+            current_bal = 85.50
+        card_on_file = str(state.get("card_last4") or (account.get("card_last4") if account else "7742") or "7742")
+        return ok_reply(
+            {
+                "balance": current_bal,
+                "balance_display": display_amount(current_bal),
+                "past_due_balance": current_bal,
+                "past_due_balance_display": display_amount(current_bal),
+                "due_date": relative_date(7),
+                "card_on_file_last4": card_on_file,
+                "status": "pending_payment" if current_bal > 0 else "paid",
+            },
+            reference,
+            language=lang,
+            spoken_summary="Solde actuel vérifié." if lang.startswith("fr") else "Current balance checked.",
+        )
+
     # 7. Bill Payment (Card Decline & Balance Decrement)
     if clean_action == "pay_bill" or (not clean_action and any(k in low for k in ("pay", "payer", "payment", "paiement", "restore", "rétablir", "retablir", "settle", "solde", "past due"))):
         acc_id = str(state.get("account_id") or "")
@@ -1064,6 +1106,7 @@ def submit_request_impl(
                 "amount_display": display_amount(pmt_amount),
                 "card_last4": c_digits[-4:],
                 "service_restored": (new_bal == 0.0),
+                "service_status": "active" if new_bal == 0.0 else "suspended",
                 "new_past_due_balance": new_bal,
             },
             reference,
@@ -1131,8 +1174,9 @@ def submit_request_impl(
         d_val = 0
         if days:
             try:
-                d_val = int(float(days))
-            except (ValueError, TypeError):
+                f_days = float(days)
+                d_val = int(f_days) if math.isfinite(f_days) else 0
+            except (ValueError, TypeError, OverflowError):
                 d_val = 0
         if d_val <= 0:
             d_match = re.search(r"\b(\d+)\s*(?:day|jour)", low)
@@ -1202,7 +1246,13 @@ def submit_request_impl(
         )
 
     # 9. Appointment Reschedule (Commit Chosen Slot)
-    if clean_action == "reschedule" or any(k in low for k in ("reschedule", "reporter", "changer", "slot", "plage")):
+    if clean_action == "reschedule" or (
+        not clean_action
+        and (
+            any(k in low for k in ("reschedule", "reporter", "slot", "plage"))
+            or ("changer" in low and any(w in low for w in ("rendez-vous", "rdv", "technicien", "plage", "heure", "date", "slot")))
+        )
+    ):
         chosen_slot = str(slot or "").strip()
         if not chosen_slot:
             if any(m in low for m in ("morning", "matin", "08:00", "8am", "8 am", "8h")):
@@ -1313,8 +1363,8 @@ def submit_request_impl(
         )
 
     # 14. Plan Catalog, Upgrades & TV Packages
-    if clean_action in ("search_plans", "upgrade_plan", "add_package") or any(k in low for k in ("plan", "forfait", "upgrade", "rehausser", "vitesse", "budget", "specialty", "package", "pack", "channel", "chaîne", "chaine", "add-on", "option", "coverage", "couverture")):
-        if any(k in low for k in ("specialty", "package", "pack", "tv", "télé", "tele", "channel", "chaîne", "chaine")):
+    if clean_action in ("search_plans", "upgrade_plan", "upgrade", "add_package") or any(k in low for k in ("plan", "forfait", "upgrade", "rehausser", "vitesse", "budget", "specialty", "package", "pack", "channel", "chaîne", "chaine", "add-on", "option", "coverage", "couverture")):
+        if any(k in low for k in ("specialty", "package", "pack", "tv", "télé", "tele", "channel", "chaîne", "chaine")) and clean_service != "internet":
             pkg = PLAN_CATALOG["tv_packages"][0]
             return ok_reply(
                 {
@@ -1330,25 +1380,7 @@ def submit_request_impl(
                 language=lang,
                 spoken_summary="Détails du forfait récupérés." if lang.startswith("fr") else "Package details retrieved.",
             )
-        if any(k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse")):
-            plan = PLAN_CATALOG["internet"][2]  # Gigabit Fiber
-            return ok_reply(
-                {
-                    "plan_name": plan["name"],
-                    "monthly_rate": plan["monthly_rate"],
-                    "rate_display": plan["rate_display"],
-                    "speed_mbps": plan["speed_mbps"],
-                    "download_mbps": plan.get("download_mbps", 1000),
-                    "upload_mbps": plan.get("upload_mbps", 750),
-                    "unlimited_data": True,
-                    "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
-                    "activation_fee": 0.0,
-                    "activation_fee_display": "0.00",
-                },
-                reference,
-                language=lang,
-                spoken_summary="Forfait Internet récupéré." if lang.startswith("fr") else "Internet plan retrieved.",
-            )
+
         try:
             budget = float(max_budget) if max_budget else 0.0
         except (ValueError, TypeError):
@@ -1357,6 +1389,95 @@ def submit_request_impl(
             b_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
             if b_match and any(w in low for w in ("budget", "under", "max", "maximum", "moins de")):
                 budget = float(b_match.group(1))
+
+        is_internet = clean_service in ("internet", "fiber", "fibre", "broadband") or any(
+            k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse")
+        )
+
+        if is_internet:
+            all_internet = PLAN_CATALOG["internet"]
+            matched_net = [p for p in all_internet if p["monthly_rate"] <= budget] if budget > 0 else list(all_internet)
+            if budget > 0 and not matched_net:
+                return ok_reply(
+                    {
+                        "plans": [],
+                        "count": 0,
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                        "error_code": "NO_PLANS_IN_BUDGET",
+                        "message": "Aucun forfait disponible dans cette limite budgétaire." if lang.startswith("fr") else "No plans available within that budget.",
+                    },
+                    reference,
+                    language=lang,
+                    spoken_summary="Aucun forfait trouvé." if lang.startswith("fr") else "No plans found.",
+                )
+
+            # Specific tier upgrade execution
+            if clean_action in ("upgrade", "upgrade_plan") or any(k in low for k in ("upgrade", "rehausser", "passer à", "changer pour")):
+                if "500" in low or (budget > 0 and 50.0 < budget <= 80.0):
+                    tier = all_internet[1]  # Fiber 500 ($70.00)
+                elif "100" in low or (budget > 0 and 0.0 < budget <= 50.0):
+                    tier = all_internet[0]  # Fiber 100 ($50.00)
+                else:
+                    tier = all_internet[2]  # Gigabit Fiber ($90.00)
+                return ok_reply(
+                    {
+                        "plan_name": tier["name"],
+                        "monthly_rate": tier["monthly_rate"],
+                        "rate_display": tier["rate_display"],
+                        "speed_mbps": tier["speed_mbps"],
+                        "download_mbps": tier.get("download_mbps", tier["speed_mbps"]),
+                        "upload_mbps": tier.get("upload_mbps", 750 if tier["speed_mbps"] >= 1000 else tier["speed_mbps"]),
+                        "unlimited_data": True,
+                        "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                        "upgrade_confirmed": True,
+                        "status": "active",
+                    },
+                    reference,
+                    language=lang,
+                    spoken_summary="Forfait Internet mis à niveau." if lang.startswith("fr") else "Internet plan upgraded.",
+                )
+
+            curated_net = []
+            for p in matched_net:
+                curated_net.append(
+                    {
+                        "plan_id": p["plan_id"],
+                        "name": p["name"],
+                        "plan_name": p["name"],
+                        "monthly_rate": p["monthly_rate"],
+                        "rate_display": p["rate_display"],
+                        "speed_mbps": p["speed_mbps"],
+                        "download_mbps": p.get("download_mbps", p["speed_mbps"]),
+                        "upload_mbps": p.get("upload_mbps", p["speed_mbps"]),
+                        "unlimited_data": True,
+                        "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                    }
+                )
+            top = curated_net[-1]
+            return ok_reply(
+                {
+                    "plans": curated_net,
+                    "count": len(curated_net),
+                    "plan_name": top["name"],
+                    "monthly_rate": top["monthly_rate"],
+                    "rate_display": top["rate_display"],
+                    "speed_mbps": top["speed_mbps"],
+                    "download_mbps": top["download_mbps"],
+                    "upload_mbps": top["upload_mbps"],
+                    "unlimited_data": True,
+                    "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                    "activation_fee": 0.0,
+                    "activation_fee_display": "0.00",
+                },
+                reference,
+                language=lang,
+                spoken_summary="Forfaits Internet récupérés." if lang.startswith("fr") else "Internet plans retrieved.",
+            )
 
         all_mobility = PLAN_CATALOG["mobility"]
         if budget > 0:
@@ -1434,20 +1555,18 @@ def handover_to_person_impl(
         resolved_lang = _session_language(state, detected)
 
     tq = str(target_queue or "").lower()
-    if clean_reason in ("business_handoff", "business") or tq == "business":
+    if clean_reason in ("business_handoff", "business", "business_account") or tq in ("business", "business_queue", "business_support"):
         message = spoken_line("business_handoff", resolved_lang)
     elif clean_reason in ("fraud_escalation", "fraud") or tq == "fraud":
         message = spoken_line("empathy_protocol", resolved_lang)
-    elif clean_reason in ("talk_to_a_person", "live_agent_handoff", "user_requested_agent"):
-        message = spoken_line("live_agent_handoff", resolved_lang)
     elif clean_reason in ("refund_threshold_exceeded", "transfer_to_specialist") or tq == "billing_specialist":
         message = spoken_line("transfer_to_specialist", resolved_lang)
-    elif clean_reason in ("auth_failure_handoff",) or tq == "tier2_auth":
+    elif clean_reason in ("auth_failure_handoff", "auth_failure") or tq == "tier2_auth":
         message = spoken_line("auth_failure_handoff", resolved_lang)
     elif tq == "french_technical_support" or clean_reason == "secondary_language_live_agent":
         message = spoken_line("live_agent_handoff", "fr-CA")
     else:
-        message = spoken_line("handover", resolved_lang)
+        message = spoken_line("live_agent_handoff", resolved_lang)
 
     reference = tracking_id("handover_to_person", state.get("account_id", ""), clean_reason, resolved_lang)
     mock_err = _check_mock_error(state, resolved_lang, "handover_to_person")

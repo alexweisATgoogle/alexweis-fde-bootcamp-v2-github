@@ -203,7 +203,7 @@ def test_handover_to_person_language_hierarchy_and_state() -> None:
     state_en: dict = {}
     res_en = handover_to_person_impl(reason="caller_request", language="en-US", state=state_en)
     assert res_en["data"]["language"] == "en-US"
-    assert "transferring" in res_en["handoff_message"]
+    assert "connect you" in res_en["handoff_message"]
 
     # Direct callable aliases work with default state
     assert lookup_account(KNOWN_PHONE)["status"] == "ok"
@@ -432,5 +432,61 @@ def test_destination_phone_and_warranty_precedence() -> None:
     assert r_war["status"] == "ok"
     assert r_war["data"]["warranty_submitted"] is True
     assert "dispute" not in r_war["data"].get("adjustment_type", "")
+
+
+def test_check_balance_does_not_execute_payment() -> None:
+    st = {"logged_in": True, "account_id": "ACC-TEST-1", "past_due_balance": 85.50, "card_last4": "8888"}
+    res = submit_request_impl("Check current balance", action="check_balance", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["past_due_balance"] == 85.50
+    assert res["data"]["card_on_file_last4"] == "8888"
+    assert st["past_due_balance"] == 85.50
+
+
+def test_search_plans_internet_budget_filter() -> None:
+    res_80 = submit_request_impl("Internet plans under 80", action="search_plans", service_type="internet", max_budget=80, state={})
+    assert res_80["status"] == "ok"
+    plan_names = [p["name"] for p in res_80["data"]["plans"]]
+    assert "Fiber 100" in plan_names
+    assert "Fiber 500" in plan_names
+    assert "Gigabit Fiber" not in plan_names
+
+    res_15 = submit_request_impl("Cheapest internet", action="search_plans", service_type="internet", max_budget=15, state={})
+    assert res_15["status"] == "ok"
+    assert res_15["data"]["error_code"] == "NO_PLANS_IN_BUDGET"
+    assert res_15["data"]["plans"] == []
+
+
+def test_upgrade_internet_tier_selection() -> None:
+    st = {"logged_in": True, "account_id": "ACC-TEST-2"}
+    res = submit_request_impl("Changer de forfait pour le 500 Mbps", action="upgrade", service_type="internet", max_budget=80, state=st, language="fr-CA")
+    assert res["status"] == "ok"
+    assert res["data"]["plan_name"] == "Fiber 500"
+    assert res["data"]["monthly_rate"] == 70.00
+    assert "appointment_rescheduled" not in st
+
+
+def test_sla_credit_days_overflow_safety() -> None:
+    st = {"logged_in": True, "account_id": "ACC-TEST-3"}
+    res_inf = submit_request_impl("Outage credit", action="dispute", days=float("inf"), state=st)
+    assert res_inf["status"] == "ok"
+    assert res_inf["data"]["credit_approved"] is True
+
+
+def test_secret_pin_retry_attempt_accepted() -> None:
+    from lib.fakes import secret_pin_accepted
+    assert secret_pin_accepted("7890", attempts=0) is True
+    assert secret_pin_accepted("7890", attempts=1) is True
+    assert secret_pin_accepted("7890", attempts=2) is False
+    assert secret_pin_accepted("9999", attempts=0) is False
+    assert secret_pin_accepted("9999", attempts=1) is False
+
+
+def test_check_ticket_returns_estimated_resolution_time() -> None:
+    st = {"logged_in": True, "account_id": "ACC-TEST-4"}
+    res = submit_request_impl("Check status of ticket T88219", action="check_ticket", state=st)
+    assert res["status"] == "ok"
+    assert "estimated_resolution_time" in res["data"]
+    assert res["data"]["status"] == "in_progress"
 
 

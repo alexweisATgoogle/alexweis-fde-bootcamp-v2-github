@@ -914,6 +914,99 @@ def only_digits(text: Any) -> str:  # pragma: no cover
 
 MAX_PAYMENT_ATTEMPTS = 3  # pragma: no cover
 
+def record_payment_attempt(  # pragma: no cover
+    state: dict[str, Any],
+    card_or_success: Any = False,
+    method: str = "card",
+    reference: str | None = None,
+    language: str = "",
+) -> dict[str, Any]:
+    """Track payment attempts, clear stale card_last4 on decline, and trigger lockout on the 3rd declined attempt."""
+    lang = _session_language(state, language)
+    mock_err = _check_mock_error(state, lang, "payment_attempt")
+    if mock_err:
+        return mock_err
+    ref = reference or tracking_id("payment_attempt", state.get("account_id", ""))
+    if isinstance(card_or_success, bool):
+        is_success = card_or_success
+        card_digits = normalize_code(state.get("card_last4", ""))
+    else:
+        card_digits = normalize_code(card_or_success)
+        last4_check = card_digits[-4:] if len(card_digits) >= 4 else card_digits
+        is_success = bool(last4_check) and last4_check not in DECLINED_CARD_LAST4
+    last4 = card_digits[-4:] if len(card_digits) >= 4 else card_digits
+    if is_success:
+        state["payment_failure_count"] = 0
+        if last4:
+            state["card_last4"] = last4
+        state["last_payment_method"] = str(method or "card")
+        return ok_reply(
+            {
+                "payment_processed": True,
+                "attempts": 0,
+                "requested_card_last4": last4,
+                "last_payment_method": state["last_payment_method"],
+            },
+            ref,
+            language=lang,
+        )
+    failures = read_count(state, "payment_failure_count") + 1
+    state["payment_failure_count"] = failures
+    state["card_last4"] = ""
+    if last4:
+        state["declined_card_last4"] = last4
+    state["payment_declined_once"] = True
+    if failures >= MAX_PAYMENT_ATTEMPTS:
+        return error_reply(
+            "TOO_MANY_ATTEMPTS",
+            "Too many declined payment attempts on this call.",
+            "Call handover_to_person immediately, speak handoff_message, and call end_session.",
+            ref,
+            language=lang,
+            data={
+                "attempts": failures,
+                "attempts_remaining": 0,
+                "attempts_left": 0,
+                "lockout_triggered": True,
+            },
+        )
+    remaining = MAX_PAYMENT_ATTEMPTS - failures
+    err_code = "CARD_DECLINED" if method == "card" else "PAYMENT_DECLINED"
+    status_desc = "Paiement refusé." if lang.startswith("fr") else "Card declined."
+    err_msg = "La carte a été refusée." if lang.startswith("fr") else "The card was declined."
+    action_msg = (
+        "Informer l'appelant que la carte est refusée et demander une autre méthode."
+        if lang.startswith("fr")
+        else "Tell caller card was declined and ask for another payment method."
+    )
+    return error_reply(
+        err_code,
+        err_msg if err_code == "CARD_DECLINED" else ("Paiement refusé." if lang.startswith("fr") else "Payment declined."),
+        action_msg,
+        ref,
+        language=lang,
+        data={
+            "attempts": failures,
+            "attempts_remaining": remaining,
+            "attempts_left": remaining,
+            "lockout_triggered": False,
+            "spoken_summary": status_desc,
+        },
+    )
+
+def resolve_postal_code_region(postal_code: str) -> str:  # pragma: no cover
+    """Map Canadian postal code / FSA to PRD region via mathematical sector digit.
+
+    Odd sector digit (1, 3, 5, 7, 9) -> Region-A (Active Outage)
+    Even sector digit (0, 2, 4, 6, 8) -> Region-B (Normal Operation)
+    Default -> Region-A
+    """
+    clean = re.sub(r"[^A-Za-z0-9]", "", postal_code.upper())
+    if len(clean) >= 2 and clean[1].isdigit():
+        digit = int(clean[1])
+        return "Region-A" if digit % 2 == 1 else "Region-B"
+    return "Region-A"
+
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {
         "en-US": "Welcome to Telco. I can help with billing, technical support, or managing your account. To get started, could you tell me the phone number or account number associated with your service?",
@@ -941,9 +1034,9 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Por su seguridad, necesitaré verificar su identidad. Ingrese el PIN de 4 dígitos que configuró.",
     },
     "handover": {
-        "en-US": "I'm transferring you to a member of our team now. Thank you for your patience.",
-        "fr-CA": "Je vous transfère maintenant à un membre de notre équipe. Merci de votre patience.",
-        "es-US": "Le transfiero ahora con un miembro de nuestro equipo. Gracias por su paciencia.",
+        "en-US": "I'll connect you to a representative who can help. Please hold.",
+        "fr-CA": "Je vous transfère à un représentant qui pourra vous aider. Veuillez patienter.",
+        "es-US": "Le transfiero a un representante que pueda ayudarlo. Por favor espere.",
     },
     "live_agent_handoff": {
         "en-US": "I'll connect you to a representative who can help. Please hold.",
@@ -981,18 +1074,9 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
     },
     "transfer_to_specialist": {
-        "en-US": (
-            "This request exceeds the self-service limit and requires specialist approval. "
-            "I'll connect you to a billing specialist now — they'll have everything we've already discussed."
-        ),
-        "fr-CA": (
-            "Cette demande dépasse la limite libre-service et nécessite l'approbation d'un spécialiste. "
-            "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation."
-        ),
-        "es-US": (
-            "Esta solicitud supera el límite de autoservicio y requiere la aprobación de un especialista. "
-            "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido."
-        ),
+        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
+        "fr-CA": "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation.",
+        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
     },
     "auth_failure_handoff": {
         "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",
@@ -1060,100 +1144,6 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
         template = template.replace(f"[{slot_name}]", str(slot_val)).replace(f"{{{slot_name}}}", str(slot_val))
     return template
 
-def record_payment_attempt(  # pragma: no cover
-    state: dict[str, Any],
-    card_or_success: Any = False,
-    method: str = "card",
-    reference: str | None = None,
-    language: str = "",
-) -> dict[str, Any]:
-    """Track payment attempts, clear stale card_last4 on decline, and trigger lockout on the 3rd declined attempt."""
-    lang = _session_language(state, language)
-    mock_err = _check_mock_error(state, lang, "payment_attempt")
-    if mock_err:
-        return mock_err
-    ref = reference or tracking_id("payment_attempt", state.get("account_id", ""))
-    if isinstance(card_or_success, bool):
-        is_success = card_or_success
-        card_digits = normalize_code(state.get("card_last4", ""))
-    else:
-        card_digits = normalize_code(card_or_success)
-        last4_check = card_digits[-4:] if len(card_digits) >= 4 else card_digits
-        is_success = bool(last4_check) and last4_check not in DECLINED_CARD_LAST4
-    last4 = card_digits[-4:] if len(card_digits) >= 4 else card_digits
-    if is_success:
-        state["payment_failure_count"] = 0
-        if last4:
-            state["card_last4"] = last4
-        state["last_payment_method"] = str(method or "card")
-        return ok_reply(
-            {
-                "payment_processed": True,
-                "attempts": 0,
-                "requested_card_last4": last4,
-                "last_payment_method": state["last_payment_method"],
-            },
-            ref,
-            language=lang,
-        )
-    failures = read_count(state, "payment_failure_count") + 1
-    state["payment_failure_count"] = failures
-    state["card_last4"] = ""
-    if last4:
-        state["declined_card_last4"] = last4
-    state["payment_declined_once"] = True
-    if failures >= MAX_PAYMENT_ATTEMPTS:
-        return error_reply(
-            "TOO_MANY_ATTEMPTS",
-            "Too many declined payment attempts on this call.",
-            "Call handover_to_person immediately, speak handoff_message, and call end_session.",
-            ref,
-            language=lang,
-            data={
-                "attempts": failures,
-                "attempts_remaining": 0,
-                "attempts_left": 0,
-                "lockout_triggered": True,
-            },
-        )
-    remaining = MAX_PAYMENT_ATTEMPTS - failures
-    err_code = "CARD_DECLINED" if method == "card" else "PAYMENT_DECLINED"
-    decline_summary = spoken_line("card_declined", lang)
-    status_desc = "Paiement refusé." if lang.startswith("fr") else "Card declined."
-    err_msg = "La carte a été refusée." if lang.startswith("fr") else "The card was declined."
-    action_msg = (
-        "Informer l'appelant que la carte est refusée et demander une autre méthode."
-        if lang.startswith("fr")
-        else "Tell caller card was declined and ask for another payment method."
-    )
-    return error_reply(
-        err_code,
-        err_msg if err_code == "CARD_DECLINED" else ("Paiement refusé." if lang.startswith("fr") else "Payment declined."),
-        action_msg,
-        ref,
-        language=lang,
-        data={
-            "attempts": failures,
-            "attempts_remaining": remaining,
-            "attempts_left": remaining,
-            "lockout_triggered": False,
-            "spoken_summary": status_desc,
-        },
-    )
-
-def resolve_postal_code_region(postal_code: str) -> str:  # pragma: no cover
-    """Map Canadian postal code / FSA to PRD region via mathematical sector digit.
-
-    Odd sector digit (1, 3, 5, 7, 9) -> Region-A (Active Outage)
-    Even sector digit (0, 2, 4, 6, 8) -> Region-B (Normal Operation)
-    Default -> Region-A
-    """
-    clean = re.sub(r"[^A-Za-z0-9]", "", postal_code.upper())
-    if len(clean) >= 2 and clean[1].isdigit():
-        digit = int(clean[1])
-        return "Region-A" if digit % 2 == 1 else "Region-B"
-    return "Region-A"
-
 def submit_request_impl(  # pragma: no cover
     summary: str,
     action: str = "",
@@ -1206,7 +1196,15 @@ def submit_request_impl(  # pragma: no cover
             state["phone_last4"] = p_digits[-4:]
 
     # 1. Outage Check (M4) — Information inquiry, does not require login
-    if (clean_action == "outage_check" or any(k in low for k in ("outage", "panne", "service alert", "panne de service")) or (postal_code and len(postal_code) >= 3)) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
+    if (
+        clean_action == "outage_check"
+        or (
+            any(k in low for k in ("outage", "panne", "service alert", "panne de service"))
+            and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund")
+            and not (days not in ("", None, 0, "0"))
+        )
+        or (postal_code and len(postal_code) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund"))
+    ) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
         if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular", "cell phone", "données mobiles")):
             return ok_reply(
                 {
@@ -1271,7 +1269,7 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 3. Open Support Ticket Status (M6) — Information inquiry, does not require login
-    if clean_action == "check_ticket" or any(k in low for k in ("ticket", "billet")):
+    if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
         tid_match = re.search(r"\b(T\d{5})\b", clean_summary.upper())
         tid = tid_match.group(1) if tid_match else "T88219"
         ticket = TICKETS.get(tid, TICKETS["T88219"])
@@ -1283,6 +1281,7 @@ def submit_request_impl(  # pragma: no cover
                 "ticket_id": ticket["ticket_id"],
                 "status": status_lbl,
                 "eta": eta,
+                "estimated_resolution_time": eta,
                 "service_type": ticket["service_type"],
                 "description": desc,
             },
@@ -1292,7 +1291,7 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 4. Technician Appointment Arrival Status (M6) — Information inquiry without reschedule/cancel
-    if (clean_action == "check_appointment" or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
+    if (clean_action in ("check_appointment", "appointment_status") or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
         acc_id = str(state.get("account_id") or "A1001")
         appt = APPOINTMENTS.get(acc_id, APPOINTMENTS["A1001"])
         if lang.startswith("fr"):
@@ -1504,6 +1503,40 @@ def submit_request_impl(  # pragma: no cover
             spoken_summary="Entente de paiement confirmée." if lang.startswith("fr") else "Payment arrangement confirmed.",
         )
 
+    # 6c. Check Balance / Bill Inquiry (M3)
+    if clean_action in ("check_balance", "view_balance", "balance_inquiry", "get_balance", "bill_inquiry") or (
+        clean_action == "pay_bill"
+        and any(k in low for k in ("check balance", "view balance", "what is the balance", "inquire balance", "vérifier le solde", "consulter le solde", "quel est le solde"))
+        and not any(k in low for k in ("pay now", "process payment", "proceed with payment", "payer maintenant", "confirmer le paiement"))
+    ):
+        acc_id = str(state.get("account_id") or "")
+        account = find_account(acc_id) if acc_id else None
+        raw_bal = state.get("past_due_balance")
+        if raw_bal is None:
+            current_bal = float(account.get("past_due_balance", 85.50)) if account else 85.50
+        else:
+            try:
+                current_bal = float(raw_bal)
+            except (ValueError, TypeError):
+                current_bal = 85.50
+        if not math.isfinite(current_bal):
+            current_bal = 85.50
+        card_on_file = str(state.get("card_last4") or (account.get("card_last4") if account else "7742") or "7742")
+        return ok_reply(
+            {
+                "balance": current_bal,
+                "balance_display": display_amount(current_bal),
+                "past_due_balance": current_bal,
+                "past_due_balance_display": display_amount(current_bal),
+                "due_date": relative_date(7),
+                "card_on_file_last4": card_on_file,
+                "status": "pending_payment" if current_bal > 0 else "paid",
+            },
+            reference,
+            language=lang,
+            spoken_summary="Solde actuel vérifié." if lang.startswith("fr") else "Current balance checked.",
+        )
+
     # 7. Bill Payment (Card Decline & Balance Decrement)
     if clean_action == "pay_bill" or (not clean_action and any(k in low for k in ("pay", "payer", "payment", "paiement", "restore", "rétablir", "retablir", "settle", "solde", "past due"))):
         acc_id = str(state.get("account_id") or "")
@@ -1579,6 +1612,7 @@ def submit_request_impl(  # pragma: no cover
                 "amount_display": display_amount(pmt_amount),
                 "card_last4": c_digits[-4:],
                 "service_restored": (new_bal == 0.0),
+                "service_status": "active" if new_bal == 0.0 else "suspended",
                 "new_past_due_balance": new_bal,
             },
             reference,
@@ -1646,8 +1680,9 @@ def submit_request_impl(  # pragma: no cover
         d_val = 0
         if days:
             try:
-                d_val = int(float(days))
-            except (ValueError, TypeError):
+                f_days = float(days)
+                d_val = int(f_days) if math.isfinite(f_days) else 0
+            except (ValueError, TypeError, OverflowError):
                 d_val = 0
         if d_val <= 0:
             d_match = re.search(r"\b(\d+)\s*(?:day|jour)", low)
@@ -1717,7 +1752,13 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 9. Appointment Reschedule (Commit Chosen Slot)
-    if clean_action == "reschedule" or any(k in low for k in ("reschedule", "reporter", "changer", "slot", "plage")):
+    if clean_action == "reschedule" or (
+        not clean_action
+        and (
+            any(k in low for k in ("reschedule", "reporter", "slot", "plage"))
+            or ("changer" in low and any(w in low for w in ("rendez-vous", "rdv", "technicien", "plage", "heure", "date", "slot")))
+        )
+    ):
         chosen_slot = str(slot or "").strip()
         if not chosen_slot:
             if any(m in low for m in ("morning", "matin", "08:00", "8am", "8 am", "8h")):
@@ -1828,8 +1869,8 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 14. Plan Catalog, Upgrades & TV Packages
-    if clean_action in ("search_plans", "upgrade_plan", "add_package") or any(k in low for k in ("plan", "forfait", "upgrade", "rehausser", "vitesse", "budget", "specialty", "package", "pack", "channel", "chaîne", "chaine", "add-on", "option", "coverage", "couverture")):
-        if any(k in low for k in ("specialty", "package", "pack", "tv", "télé", "tele", "channel", "chaîne", "chaine")):
+    if clean_action in ("search_plans", "upgrade_plan", "upgrade", "add_package") or any(k in low for k in ("plan", "forfait", "upgrade", "rehausser", "vitesse", "budget", "specialty", "package", "pack", "channel", "chaîne", "chaine", "add-on", "option", "coverage", "couverture")):
+        if any(k in low for k in ("specialty", "package", "pack", "tv", "télé", "tele", "channel", "chaîne", "chaine")) and clean_service != "internet":
             pkg = PLAN_CATALOG["tv_packages"][0]
             return ok_reply(
                 {
@@ -1845,25 +1886,7 @@ def submit_request_impl(  # pragma: no cover
                 language=lang,
                 spoken_summary="Détails du forfait récupérés." if lang.startswith("fr") else "Package details retrieved.",
             )
-        if any(k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse")):
-            plan = PLAN_CATALOG["internet"][2]  # Gigabit Fiber
-            return ok_reply(
-                {
-                    "plan_name": plan["name"],
-                    "monthly_rate": plan["monthly_rate"],
-                    "rate_display": plan["rate_display"],
-                    "speed_mbps": plan["speed_mbps"],
-                    "download_mbps": plan.get("download_mbps", 1000),
-                    "upload_mbps": plan.get("upload_mbps", 750),
-                    "unlimited_data": True,
-                    "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
-                    "activation_fee": 0.0,
-                    "activation_fee_display": "0.00",
-                },
-                reference,
-                language=lang,
-                spoken_summary="Forfait Internet récupéré." if lang.startswith("fr") else "Internet plan retrieved.",
-            )
+
         try:
             budget = float(max_budget) if max_budget else 0.0
         except (ValueError, TypeError):
@@ -1872,6 +1895,95 @@ def submit_request_impl(  # pragma: no cover
             b_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
             if b_match and any(w in low for w in ("budget", "under", "max", "maximum", "moins de")):
                 budget = float(b_match.group(1))
+
+        is_internet = clean_service in ("internet", "fiber", "fibre", "broadband") or any(
+            k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse")
+        )
+
+        if is_internet:
+            all_internet = PLAN_CATALOG["internet"]
+            matched_net = [p for p in all_internet if p["monthly_rate"] <= budget] if budget > 0 else list(all_internet)
+            if budget > 0 and not matched_net:
+                return ok_reply(
+                    {
+                        "plans": [],
+                        "count": 0,
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                        "error_code": "NO_PLANS_IN_BUDGET",
+                        "message": "Aucun forfait disponible dans cette limite budgétaire." if lang.startswith("fr") else "No plans available within that budget.",
+                    },
+                    reference,
+                    language=lang,
+                    spoken_summary="Aucun forfait trouvé." if lang.startswith("fr") else "No plans found.",
+                )
+
+            # Specific tier upgrade execution
+            if clean_action in ("upgrade", "upgrade_plan") or any(k in low for k in ("upgrade", "rehausser", "passer à", "changer pour")):
+                if "500" in low or (budget > 0 and 50.0 < budget <= 80.0):
+                    tier = all_internet[1]  # Fiber 500 ($70.00)
+                elif "100" in low or (budget > 0 and 0.0 < budget <= 50.0):
+                    tier = all_internet[0]  # Fiber 100 ($50.00)
+                else:
+                    tier = all_internet[2]  # Gigabit Fiber ($90.00)
+                return ok_reply(
+                    {
+                        "plan_name": tier["name"],
+                        "monthly_rate": tier["monthly_rate"],
+                        "rate_display": tier["rate_display"],
+                        "speed_mbps": tier["speed_mbps"],
+                        "download_mbps": tier.get("download_mbps", tier["speed_mbps"]),
+                        "upload_mbps": tier.get("upload_mbps", 750 if tier["speed_mbps"] >= 1000 else tier["speed_mbps"]),
+                        "unlimited_data": True,
+                        "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                        "upgrade_confirmed": True,
+                        "status": "active",
+                    },
+                    reference,
+                    language=lang,
+                    spoken_summary="Forfait Internet mis à niveau." if lang.startswith("fr") else "Internet plan upgraded.",
+                )
+
+            curated_net = []
+            for p in matched_net:
+                curated_net.append(
+                    {
+                        "plan_id": p["plan_id"],
+                        "name": p["name"],
+                        "plan_name": p["name"],
+                        "monthly_rate": p["monthly_rate"],
+                        "rate_display": p["rate_display"],
+                        "speed_mbps": p["speed_mbps"],
+                        "download_mbps": p.get("download_mbps", p["speed_mbps"]),
+                        "upload_mbps": p.get("upload_mbps", p["speed_mbps"]),
+                        "unlimited_data": True,
+                        "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                    }
+                )
+            top = curated_net[-1]
+            return ok_reply(
+                {
+                    "plans": curated_net,
+                    "count": len(curated_net),
+                    "plan_name": top["name"],
+                    "monthly_rate": top["monthly_rate"],
+                    "rate_display": top["rate_display"],
+                    "speed_mbps": top["speed_mbps"],
+                    "download_mbps": top["download_mbps"],
+                    "upload_mbps": top["upload_mbps"],
+                    "unlimited_data": True,
+                    "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                    "activation_fee": 0.0,
+                    "activation_fee_display": "0.00",
+                },
+                reference,
+                language=lang,
+                spoken_summary="Forfaits Internet récupérés." if lang.startswith("fr") else "Internet plans retrieved.",
+            )
 
         all_mobility = PLAN_CATALOG["mobility"]
         if budget > 0:

@@ -181,9 +181,9 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Por su seguridad, necesitaré verificar su identidad. Ingrese el PIN de 4 dígitos que configuró.",
     },
     "handover": {
-        "en-US": "I'm transferring you to a member of our team now. Thank you for your patience.",
-        "fr-CA": "Je vous transfère maintenant à un membre de notre équipe. Merci de votre patience.",
-        "es-US": "Le transfiero ahora con un miembro de nuestro equipo. Gracias por su paciencia.",
+        "en-US": "I'll connect you to a representative who can help. Please hold.",
+        "fr-CA": "Je vous transfère à un représentant qui pourra vous aider. Veuillez patienter.",
+        "es-US": "Le transfiero a un representante que pueda ayudarlo. Por favor espere.",
     },
     "live_agent_handoff": {
         "en-US": "I'll connect you to a representative who can help. Please hold.",
@@ -221,18 +221,9 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
     },
     "transfer_to_specialist": {
-        "en-US": (
-            "This request exceeds the self-service limit and requires specialist approval. "
-            "I'll connect you to a billing specialist now — they'll have everything we've already discussed."
-        ),
-        "fr-CA": (
-            "Cette demande dépasse la limite libre-service et nécessite l'approbation d'un spécialiste. "
-            "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation."
-        ),
-        "es-US": (
-            "Esta solicitud supera el límite de autoservicio y requiere la aprobación de un especialista. "
-            "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido."
-        ),
+        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
+        "fr-CA": "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation.",
+        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
     },
     "auth_failure_handoff": {
         "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",

@@ -538,35 +538,22 @@ ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
     {"9999", "999999", "8888"}
 )
 
-VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})  # pragma: no cover
+def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover
+    """Whether the fake login service accepts a secret PIN.
 
-VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})  # pragma: no cover
-
-VALID_LOGIN_CODES: frozenset[str] = VALID_OTPS | VALID_PINS  # pragma: no cover
-
-def login_code_accepted(code_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover
-    """Whether the fake login service accepts a code on this try (the login ladder).
-
-    `attempts` is the number of wrong tries so far on this call:
-      - first try (attempts == 0): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
-      - second try (attempts == 1): only known codes in VALID_LOGIN_CODES;
-      - the last try (attempts >= max_attempts - 1): always wrong, so the caller
-        is locked out and lockout tests behave the same every time.
+    Under the 3-attempt PIN ladder:
+      - Attempt 1 (attempts == 0): any 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 2 (attempts == 1): any valid 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
     """
-    digits = normalize_code(code_digits)
+    digits = normalize_code(pin_digits)
     if not (4 <= len(digits) <= 10):
         return False
     if digits in ALWAYS_WRONG_LOGIN_CODES:
         return False
     if attempts >= max(max_attempts - 1, 1):
         return False
-    if attempts >= 1:
-        return digits in VALID_LOGIN_CODES
     return True
-
-def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover
-    """Whether the fake login service accepts a secret PIN (the same ladder as login codes)."""
-    return login_code_accepted(pin_digits, attempts=attempts, max_attempts=max_attempts)
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {
@@ -595,9 +582,9 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Por su seguridad, necesitaré verificar su identidad. Ingrese el PIN de 4 dígitos que configuró.",
     },
     "handover": {
-        "en-US": "I'm transferring you to a member of our team now. Thank you for your patience.",
-        "fr-CA": "Je vous transfère maintenant à un membre de notre équipe. Merci de votre patience.",
-        "es-US": "Le transfiero ahora con un miembro de nuestro equipo. Gracias por su paciencia.",
+        "en-US": "I'll connect you to a representative who can help. Please hold.",
+        "fr-CA": "Je vous transfère à un représentant qui pourra vous aider. Veuillez patienter.",
+        "es-US": "Le transfiero a un representante que pueda ayudarlo. Por favor espere.",
     },
     "live_agent_handoff": {
         "en-US": "I'll connect you to a representative who can help. Please hold.",
@@ -635,18 +622,9 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
     },
     "transfer_to_specialist": {
-        "en-US": (
-            "This request exceeds the self-service limit and requires specialist approval. "
-            "I'll connect you to a billing specialist now — they'll have everything we've already discussed."
-        ),
-        "fr-CA": (
-            "Cette demande dépasse la limite libre-service et nécessite l'approbation d'un spécialiste. "
-            "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation."
-        ),
-        "es-US": (
-            "Esta solicitud supera el límite de autoservicio y requiere la aprobación de un especialista. "
-            "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido."
-        ),
+        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
+        "fr-CA": "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation.",
+        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
     },
     "auth_failure_handoff": {
         "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",
