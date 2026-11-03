@@ -442,7 +442,10 @@ def check_login_code_impl(
             "Ask the caller to say or key in the login code again.",
             reference,
         )
-    if not login_code_accepted(digits, attempts=failures, max_attempts=MAX_LOGIN_ATTEMPTS):
+    accepted = login_code_accepted(digits, attempts=failures, max_attempts=MAX_LOGIN_ATTEMPTS)
+    if not accepted and len(digits) == 4:
+        accepted = secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_LOGIN_ATTEMPTS)
+    if not accepted:
         failures += 1
         state["auth_failure_count"] = failures
         state["login_attempts"] = failures

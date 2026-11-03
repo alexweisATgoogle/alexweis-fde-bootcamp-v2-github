@@ -562,6 +562,23 @@ def ok_reply(  # pragma: no cover
             reply[key] = payload[key]
     return reply
 
+def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover
+    """Whether the fake login service accepts a secret PIN.
+
+    Under the 3-attempt PIN ladder:
+      - Attempt 1 (attempts == 0): any 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 2 (attempts == 1): any valid 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
+    """
+    digits = normalize_code(pin_digits)
+    if not (4 <= len(digits) <= 10):
+        return False
+    if digits in ALWAYS_WRONG_LOGIN_CODES:
+        return False
+    if attempts >= max(max_attempts - 1, 1):
+        return False
+    return True
+
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {
         "en-US": "Welcome to Telco. I can help with billing, technical support, or managing your account. To get started, could you tell me the phone number or account number associated with your service?",
@@ -737,7 +754,10 @@ def check_login_code_impl(  # pragma: no cover
             "Ask the caller to say or key in the login code again.",
             reference,
         )
-    if not login_code_accepted(digits, attempts=failures, max_attempts=MAX_LOGIN_ATTEMPTS):
+    accepted = login_code_accepted(digits, attempts=failures, max_attempts=MAX_LOGIN_ATTEMPTS)
+    if not accepted and len(digits) == 4:
+        accepted = secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_LOGIN_ATTEMPTS)
+    if not accepted:
         failures += 1
         state["auth_failure_count"] = failures
         state["login_attempts"] = failures

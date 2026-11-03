@@ -490,3 +490,18 @@ def test_check_ticket_returns_estimated_resolution_time() -> None:
     assert res["data"]["status"] == "in_progress"
 
 
+def test_check_login_code_retry_pin_fallback() -> None:
+    st = {"account_id": "ACC-TEST-5", "auth_status": "code_sent"}
+    # Attempt 1: wrong code "9999" (in ALWAYS_WRONG_LOGIN_CODES) -> fails
+    res1 = check_login_code_impl("9999", state=st)
+    assert res1["status"] == "error"
+    assert res1["error"] == "WRONG_CODE"
+
+    # Attempt 2: 4-digit code "7890" (not in ALWAYS_WRONG_LOGIN_CODES) -> succeeds via PIN fallback
+    res2 = check_login_code_impl("7890", state=st)
+    assert res2["status"] == "ok"
+    assert res2["data"]["logged_in"] is True
+    assert st["logged_in"] is True
+
+
+
