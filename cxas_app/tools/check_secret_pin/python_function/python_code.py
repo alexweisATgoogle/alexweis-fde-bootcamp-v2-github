@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 import hashlib
+import math
 import re
 
 MAX_PIN_ATTEMPTS = 3  # pragma: no cover
@@ -372,6 +373,8 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     state.setdefault("auth_failure_count", 0)
     state.setdefault("pin_failure_count", 0)
     state.setdefault("payment_failure_count", 0)
+    state.setdefault("past_due_balance", float(default_acct.get("past_due_balance", 85.50)))
+    state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
 
 MAX_LOGIN_ATTEMPTS = 3  # pragma: no cover
 
@@ -532,7 +535,7 @@ def ok_reply(  # pragma: no cover
     return reply
 
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
-    {"9999", "999999", "8888", "0000"}  # overfit: allow
+    {"9999", "999999", "8888"}
 )
 
 VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})  # pragma: no cover
@@ -545,9 +548,8 @@ def login_code_accepted(code_digits: Any, attempts: int = 0, max_attempts: int =
     """Whether the fake login service accepts a code on this try (the login ladder).
 
     `attempts` is the number of wrong tries so far on this call:
-      - first try (attempts == 0): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
-      - later tries: only VALID_LOGIN_CODES;
-      - the last try (attempts == max_attempts - 1): always wrong, so the caller
+      - first and second tries (attempts < 2): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
+      - the last try (attempts >= max_attempts - 1): always wrong, so the caller
         is locked out and lockout tests behave the same every time.
     """
     digits = normalize_code(code_digits)

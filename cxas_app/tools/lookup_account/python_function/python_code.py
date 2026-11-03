@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 import hashlib
+import math
 import re
 
 def relative_date(days: int = 0) -> str:  # pragma: no cover
@@ -518,6 +519,8 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
     digits = normalize_code(raw_str)
+    if not has_alpha and len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
     canonical_id = ("A" + digits) if (raw.startswith("A") and len(digits) >= 4) else raw
     norm = normalize_identifier(raw_str)
     for record in ACCOUNTS:
@@ -540,6 +543,34 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 rec[k_last4] = rec["phone"][-4:]
                 rec[k_caller] = p_val[-4:]
                 return rec
+    if not has_alpha and len(digits) == 7:
+        for record in ACCOUNTS:
+            if record["phone"].endswith(digits):
+                rec = dict(record)
+                rec[k_last4] = rec["phone"][-4:]
+                rec[k_caller] = digits[-4:]
+                return rec
+        digits_10 = "202" + digits
+        return {
+            "account_id": "A" + digits_10[-6:],
+            "phone": digits_10,
+            k_last4: digits[-4:],
+            k_caller: digits[-4:],
+            "first_name": "",
+            "status": "active",
+            "preferred_language": "en-US",
+            "business_flag": False,
+            "card_last4": "7742",
+            "past_due_balance": 85.50,
+            "current_balance": 85.50,
+            "region": "Region-A",
+            "loyalty_limit": 25.0,
+            "mfa_enabled": False,
+            "active_services": ["mobile", "internet"],
+            "contract_end_date": relative_date(180),
+            "early_cancellation_fee": 150.00,
+            "payment_ledger": [],
+        }
     if not has_alpha and len(digits) in (9, 10):
         return {
             "account_id": "A" + digits[-6:],
@@ -559,18 +590,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [
-                {
-                    "payment_id": f"PMT-{digits[-5:]}",
-                    "amount": 85.50,
-                    "posted_date": relative_date(-1),
-                    "method": "online_banking",
-                    "status": "cleared",
-                }
-            ],
+            "payment_ledger": [],
         }
     if (
-        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Z]{2,4}-\d{4,8}", raw))
+        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
@@ -579,6 +602,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
+        base["payment_ledger"] = []
         return base
     return None
 
@@ -800,7 +824,7 @@ def lookup_account_impl(  # pragma: no cover
                 data={
                     "blocked": True,
                     "spoken_message": blocked_msg,
-                    "spoken_summary": blocked_msg,
+                    "spoken_summary": "Avis de déviation d'appel." if lang.startswith("fr") else "Call deflection notice.",
                 },
             )
         account = find_account(raw_ident)
@@ -823,6 +847,8 @@ def lookup_account_impl(  # pragma: no cover
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]
+    state["past_due_balance"] = float(account.get("past_due_balance", 85.50))
+    state["card_last4"] = str(account.get("card_last4", "7742"))
     ident = normalize_identifier(raw_ident)
     if ident["kind"] in ("phone", "international_phone"):
         caller_digits = only_digits(ident["value"])
@@ -859,10 +885,9 @@ def lookup_account_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=b_msg,
+            spoken_summary="Compte d'affaires identifié." if lang.startswith("fr") else "Business account identified.",
         )
 
-    summary_text = spoken_line("account_found", lang, first_name=account.get("first_name", ""))
     return ok_reply(
         {
             "account_id": account["account_id"],
@@ -873,6 +898,6 @@ def lookup_account_impl(  # pragma: no cover
         },
         reference,
         language=lang,
-        spoken_summary=summary_text,
+        spoken_summary="Compte identifié." if lang.startswith("fr") else "Account identified.",
     )
 # --- END GENERATED SHARED BUNDLE ---

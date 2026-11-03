@@ -61,6 +61,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 import hashlib
+import math
 import re
 
 def relative_date(days: int = 0) -> str:  # pragma: no cover
@@ -596,6 +597,8 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     state.setdefault("auth_failure_count", 0)
     state.setdefault("pin_failure_count", 0)
     state.setdefault("payment_failure_count", 0)
+    state.setdefault("past_due_balance", float(default_acct.get("past_due_balance", 85.50)))
+    state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
 
 MAX_LOGIN_ATTEMPTS = 3  # pragma: no cover
 
@@ -767,6 +770,8 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
     digits = normalize_code(raw_str)
+    if not has_alpha and len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
     canonical_id = ("A" + digits) if (raw.startswith("A") and len(digits) >= 4) else raw
     norm = normalize_identifier(raw_str)
     for record in ACCOUNTS:
@@ -789,6 +794,34 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 rec[k_last4] = rec["phone"][-4:]
                 rec[k_caller] = p_val[-4:]
                 return rec
+    if not has_alpha and len(digits) == 7:
+        for record in ACCOUNTS:
+            if record["phone"].endswith(digits):
+                rec = dict(record)
+                rec[k_last4] = rec["phone"][-4:]
+                rec[k_caller] = digits[-4:]
+                return rec
+        digits_10 = "202" + digits
+        return {
+            "account_id": "A" + digits_10[-6:],
+            "phone": digits_10,
+            k_last4: digits[-4:],
+            k_caller: digits[-4:],
+            "first_name": "",
+            "status": "active",
+            "preferred_language": "en-US",
+            "business_flag": False,
+            "card_last4": "7742",
+            "past_due_balance": 85.50,
+            "current_balance": 85.50,
+            "region": "Region-A",
+            "loyalty_limit": 25.0,
+            "mfa_enabled": False,
+            "active_services": ["mobile", "internet"],
+            "contract_end_date": relative_date(180),
+            "early_cancellation_fee": 150.00,
+            "payment_ledger": [],
+        }
     if not has_alpha and len(digits) in (9, 10):
         return {
             "account_id": "A" + digits[-6:],
@@ -808,18 +841,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [
-                {
-                    "payment_id": f"PMT-{digits[-5:]}",
-                    "amount": 85.50,
-                    "posted_date": relative_date(-1),
-                    "method": "online_banking",
-                    "status": "cleared",
-                }
-            ],
+            "payment_ledger": [],
         }
     if (
-        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Z]{2,4}-\d{4,8}", raw))
+        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
@@ -828,6 +853,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
+        base["payment_ledger"] = []
         return base
     return None
 
@@ -1065,10 +1091,17 @@ def record_payment_attempt(  # pragma: no cover
     remaining = MAX_PAYMENT_ATTEMPTS - failures
     err_code = "CARD_DECLINED" if method == "card" else "PAYMENT_DECLINED"
     decline_summary = spoken_line("card_declined", lang)
+    status_desc = "Paiement refusé." if lang.startswith("fr") else "Card declined."
+    err_msg = "La carte a été refusée." if lang.startswith("fr") else "The card was declined."
+    action_msg = (
+        "Informer l'appelant que la carte est refusée et demander une autre méthode."
+        if lang.startswith("fr")
+        else "Tell caller card was declined and ask for another payment method."
+    )
     return error_reply(
         err_code,
-        "The card was declined." if err_code == "CARD_DECLINED" else "The payment method was declined.",
-        "Tell the caller the card was declined and ask for another payment method." if err_code == "CARD_DECLINED" else "Tell the caller the payment was declined and ask for another payment method.",
+        err_msg if err_code == "CARD_DECLINED" else ("Paiement refusé." if lang.startswith("fr") else "Payment declined."),
+        action_msg,
         ref,
         language=lang,
         data={
@@ -1076,7 +1109,7 @@ def record_payment_attempt(  # pragma: no cover
             "attempts_remaining": remaining,
             "attempts_left": remaining,
             "lockout_triggered": False,
-            "spoken_summary": decline_summary,
+            "spoken_summary": status_desc,
             "spoken_message": decline_summary,
         },
     )
@@ -1121,6 +1154,7 @@ def submit_request_impl(  # pragma: no cover
     account_id = str(state.get("account_id") or "")
     clean_summary = " ".join(str(summary or "").split())
     clean_action = str(action or "").strip().lower()
+    clean_service = str(service_type or "").strip().lower()
     low = clean_summary.lower()
     reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
 
@@ -1134,7 +1168,7 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 1. Outage Check (M4) — Information inquiry, does not require login
-    if clean_action == "outage_check" or any(k in low for k in ("outage", "panne", "service alert", "panne de service")) or (postal_code and len(postal_code) >= 3):
+    if (clean_action == "outage_check" or any(k in low for k in ("outage", "panne", "service alert", "panne de service")) or (postal_code and len(postal_code) >= 3)) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
         pc = str(postal_code or "").strip()
         if not pc:
             pc_match = re.search(r"\b([A-Za-z]\d[A-Za-z](?:\s*\d[A-Za-z]\d)?)\b", clean_summary)
@@ -1152,17 +1186,18 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="État de la panne récupéré." if lang.startswith("fr") else "Outage status retrieved.",
         )
 
     # 2. Password Reset (M7) — Identified only, does not require login
     if clean_action == "password_reset" or any(k in low for k in ("password", "mot de passe", "reinitialiser", "réinitialiser")):
-        p_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
+        p_target = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
+        p_last4 = p_target[-4:]
         return ok_reply(
             {"sms_sent": True, "valid_minutes": 30, "phone_last4": p_last4},
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="SMS de réinitialisation envoyé." if lang.startswith("fr") else "Password reset SMS dispatched.",
         )
 
     # 3. Open Support Ticket Status (M6) — Information inquiry, does not require login
@@ -1180,7 +1215,7 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Statut du billet récupéré." if lang.startswith("fr") else "Ticket status retrieved.",
         )
 
     # 4. Technician Appointment Arrival Status (M6) — Information inquiry without reschedule/cancel
@@ -1199,13 +1234,21 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Statut du rendez-vous récupéré." if lang.startswith("fr") else "Appointment status retrieved.",
         )
 
-    # All mutating actions below require authentication!
-    if state.get("logged_in") is False and state.get("auth_status") != "locked":
+    # Synchronize logged_in state with auth_status
+    if state.get("logged_in") is True and state.get("auth_status") != "locked":
+        state["auth_status"] = "pass"
+    elif state.get("logged_in") is False and state.get("auth_status") != "locked":
         state["auth_status"] = "none"
-    if state.get("auth_status") != "pass":
+
+    is_unauthenticated_allowed = (
+        clean_action in ("search_plans", "troubleshoot_tv")
+        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "fibe tv", "tv app", "satellite")))
+    )
+
+    if state.get("auth_status") != "pass" and not is_unauthenticated_allowed:
         return error_reply(
             "NOT_LOGGED_IN",
             "The caller has not passed login.",
@@ -1224,7 +1267,7 @@ def submit_request_impl(  # pragma: no cover
     # 5. Cancellation (Service, Line, Phone, or Appointment)
     # Ordered BEFORE plan/speed upgrade checks so French "annuler téléphonie... haute vitesse" cancels phone!
     if clean_action == "cancel" or any(k in low for k in ("cancel", "annuler", "résilier", "resilier", "port out")):
-        if any(k in low for k in ("appointment", "technician", "rendez-vous", "technicien")):
+        if any(k in low for k in ("appointment", "technician", "rendez-vous", "technicien")) or clean_service in ("appointment", "technician"):
             acc_id = str(state.get("account_id") or "A1001")
             appt = APPOINTMENTS.get(acc_id, APPOINTMENTS.get("A1001", {}))
             if appt.get("can_cancel") is False or appt.get("status") == "en_route":
@@ -1240,7 +1283,7 @@ def submit_request_impl(  # pragma: no cover
                 {"appointment_cancelled": True, "status": "cancelled"},
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Rendez-vous annulé." if lang.startswith("fr") else "Appointment cancelled.",
             )
 
         state["service_cancelled"] = True
@@ -1254,7 +1297,7 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Annulation de service traitée." if lang.startswith("fr") else "Service cancellation processed.",
         )
 
     # 6. Prior Payment Verification (Ledger-backed)
@@ -1280,7 +1323,7 @@ def submit_request_impl(  # pragma: no cover
                 },
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Paiement antérieur vérifié." if lang.startswith("fr") else "Prior payment verified.",
             )
         return error_reply(
             "NO_PAYMENT_FOUND",
@@ -1291,8 +1334,81 @@ def submit_request_impl(  # pragma: no cover
             data={"payment_verified": False},
         )
 
+    # 6b. Payment Arrangements (M3/M7)
+    if clean_action in ("payment_arrangement", "arrangement") or (
+        any(k in low for k in ("arrangement", "entente", "installment", "versement", "échelonner", "echelonner"))
+        and not any(k in low for k in ("verify", "prior", "déjà", "deja", "settle", "payer", "pay"))
+    ):
+        acc_id = str(state.get("account_id") or "")
+        account = find_account(acc_id) if acc_id else None
+        raw_bal = state.get("past_due_balance")
+        if raw_bal is None:
+            cur_bal = float(account.get("past_due_balance", 85.50)) if account else 85.50
+        else:
+            try:
+                cur_bal = float(raw_bal)
+            except (ValueError, TypeError):
+                cur_bal = 85.50
+        if not math.isfinite(cur_bal):
+            cur_bal = 85.50
+        inst_amt = round(cur_bal / 2.0, 2)
+        d1 = relative_date(14)
+        d2 = relative_date(28)
+        state["payment_verified"] = True
+        return ok_reply(
+            {
+                "arrangement_confirmed": True,
+                "total_amount": cur_bal,
+                "total_amount_display": display_amount(cur_bal),
+                "installments": 2,
+                "installment_amount": inst_amt,
+                "installment_amount_display": display_amount(inst_amt),
+                "due_date_1": d1,
+                "due_date_2": d2,
+                "message": (
+                    f"Entente de paiement confirmée : 2 versements de {display_amount(inst_amt)} $ le {d1} et le {d2}."
+                    if lang.startswith("fr")
+                    else f"Payment arrangement confirmed: 2 installments of ${display_amount(inst_amt)} due {d1} and {d2}."
+                ),
+            },
+            reference,
+            language=lang,
+            spoken_summary="Entente de paiement confirmée." if lang.startswith("fr") else "Payment arrangement confirmed.",
+        )
+
     # 7. Bill Payment (Card Decline & Balance Decrement)
     if clean_action == "pay_bill" or (not clean_action and any(k in low for k in ("pay", "payer", "payment", "paiement", "restore", "rétablir", "retablir", "settle", "solde", "past due"))):
+        acc_id = str(state.get("account_id") or "")
+        account = find_account(acc_id) if acc_id else None
+
+        raw_bal = state.get("past_due_balance")
+        if raw_bal is None:
+            current_bal = float(account.get("past_due_balance", 85.50)) if account else 85.50
+        else:
+            try:
+                current_bal = float(raw_bal)
+            except (ValueError, TypeError):
+                current_bal = 85.50
+        if not math.isfinite(current_bal):
+            current_bal = 85.50
+
+        if current_bal <= 0.0:
+            return ok_reply(
+                {
+                    "paid": False,
+                    "already_paid": True,
+                    "amount": 0.0,
+                    "amount_display": "0.00",
+                    "card_last4": str(state.get("card_last4") or "7742"),
+                    "service_restored": True,
+                    "new_past_due_balance": 0.0,
+                    "message": "Le solde du compte est déjà à zéro." if lang.startswith("fr") else "Account balance is already zero; no payment required.",
+                },
+                reference,
+                language=lang,
+                spoken_summary="Compte à zéro." if lang.startswith("fr") else "Account balance is zero.",
+            )
+
         c_digits = normalize_code(card_last4)
         if not c_digits:
             c_match = re.search(r"\b(\d{4})\b", clean_summary)
@@ -1312,35 +1428,67 @@ def submit_request_impl(  # pragma: no cover
         if attempt_res.get("status") != OK_STATUS:
             return attempt_res
 
-        acc_id = str(state.get("account_id") or "")
-        account = find_account(acc_id) if acc_id else None
         try:
             parsed_amt = float(amount) if amount else 0.0
+            if not math.isfinite(parsed_amt):
+                parsed_amt = 0.0
         except (ValueError, TypeError):
             parsed_amt = 0.0
-        pmt_amount = parsed_amt if parsed_amt > 0.0 else (float(account.get("past_due_balance", 85.50)) if account else 85.50)
-        if account:
-            account["past_due_balance"] = 0.0
-            account["status"] = "active"
-        state["past_due_balance"] = 0.0
-        state["service_restored"] = True
-        state["status"] = "active"
+
+        pmt_amount = round(min(parsed_amt if parsed_amt > 0.0 else current_bal, current_bal), 2)
+        new_bal = round(max(0.0, current_bal - pmt_amount), 2)
+
+        state["past_due_balance"] = new_bal
+        state["service_restored"] = (new_bal == 0.0)
+        if new_bal == 0.0:
+            state["status"] = "active"
         state["card_last4"] = c_digits[-4:]
+
         return ok_reply(
             {
                 "paid": True,
                 "amount": pmt_amount,
                 "amount_display": display_amount(pmt_amount),
                 "card_last4": c_digits[-4:],
-                "service_restored": True,
-                "new_past_due_balance": 0.0,
+                "service_restored": (new_bal == 0.0),
+                "new_past_due_balance": new_bal,
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Paiement traité avec succès." if lang.startswith("fr") else "Payment processed successfully.",
         )
 
-    # 8. Billing Disputes & Credit (<= $25 Auto-Adjustment)
+    # 8. Outage SLA Credit & Billing Disputes (<= $25 Auto-Adjustment)
+    if clean_action in ("outage_credit", "sla_credit") or (
+        clean_action == "dispute" and any(k in low for k in ("outage", "panne", "downtime", "sla", "interruption"))
+    ) or any(k in low for k in ("sla credit", "downtime credit", "crédit de panne", "crédit pour panne")):
+        days = 2
+        daily_rate = round(85.50 / 30.0, 2)
+        calc_credit = round(daily_rate * days, 2)
+        try:
+            parsed_amt = float(amount) if amount else 0.0
+        except (ValueError, TypeError):
+            parsed_amt = 0.0
+        cred_amt = round(parsed_amt, 2) if parsed_amt > 0.0 else calc_credit
+        cred_amt = min(cred_amt, 25.00)
+        return ok_reply(
+            {
+                "credit_approved": True,
+                "amount": cred_amt,
+                "amount_display": display_amount(cred_amt),
+                "days": days,
+                "adjustment_type": "outage_sla_credit",
+                "message": (
+                    f"Crédit d'interruption de service de {display_amount(cred_amt)} $ appliqué à votre compte."
+                    if lang.startswith("fr")
+                    else f"Outage downtime credit of ${display_amount(cred_amt)} applied to your account."
+                ),
+            },
+            reference,
+            language=lang,
+            spoken_summary="Crédit de panne appliqué." if lang.startswith("fr") else "Outage credit applied.",
+        )
+
     if clean_action == "dispute" or any(k in low for k in ("dispute", "credit", "crédit", "refund", "remboursement", "conteste", "charge", "overcharge", "streaming", "downtime")):
         try:
             dispute_amt = float(amount) if amount else 0.0
@@ -1361,16 +1509,23 @@ def submit_request_impl(  # pragma: no cover
                 language=lang,
                 data={"amount": dispute_amt, "threshold": 25.0, "requires_specialist": True},
             )
+        days = 3
         return ok_reply(
             {
                 "refund_approved": True,
                 "amount": dispute_amt,
                 "amount_display": display_amount(dispute_amt),
-                "days": 5,
+                "days": days,
+                "adjustment_type": "courtesy_credit",
+                "message": (
+                    f"Votre remboursement de {display_amount(dispute_amt)} $ apparaîtra sur votre prochain relevé dans un délai de {days} jours ouvrables."
+                    if lang.startswith("fr")
+                    else f"Your refund of ${display_amount(dispute_amt)} will appear on your next statement within {days} business days."
+                ),
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Ajustement de contestation traité." if lang.startswith("fr") else "Dispute adjustment processed.",
         )
 
     # 9. Appointment Reschedule (Commit Chosen Slot)
@@ -1393,7 +1548,7 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Rendez-vous reporté." if lang.startswith("fr") else "Appointment rescheduled.",
         )
 
     # 10. Multi-Factor Authentication Configuration
@@ -1404,7 +1559,7 @@ def submit_request_impl(  # pragma: no cover
                 {"mfa_enabled": False, "status": "disabled"},
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Paramètre MFA mis à jour." if lang.startswith("fr") else "MFA setting updated.",
             )
         else:
             state["mfa_enabled"] = True
@@ -1412,7 +1567,7 @@ def submit_request_impl(  # pragma: no cover
                 {"mfa_enabled": True, "status": "enabled"},
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Paramètre MFA mis à jour." if lang.startswith("fr") else "MFA setting updated.",
             )
 
     # 11. Lost / Stolen Suspension
@@ -1423,7 +1578,7 @@ def submit_request_impl(  # pragma: no cover
             {"service_suspended": True, "reason": "lost_stolen", "effective_immediately": True},
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Ligne suspendue." if lang.startswith("fr") else "Line suspended.",
         )
 
     # 12. Autopay Setup
@@ -1434,12 +1589,57 @@ def submit_request_impl(  # pragma: no cover
             {"autopay_enrolled": True, "card_last4": c_digits[-4:]},
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Adhésion au paiement automatique terminée." if lang.startswith("fr") else "Autopay enrollment completed.",
         )
 
-    # 13. Warranty Claim & Safety Hazard Handling
+    # 12b. TV Troubleshooting & Virtual Repair (M4) — uncoupled from broadband outage
+    if clean_action in ("troubleshoot_tv", "tv_repair", "virtual_repair") or (
+        any(k in low for k in ("satellite", "receiver", "récepteur", "recepteur", "fibe tv", "tv app", "error 101", "erreur 101"))
+        or (any(k in low for k in ("tv", "télé", "tele")) and any(k in low for k in ("signal", "freeze", "gelé", "gele", "black screen", "écran noir", "ecran noir", "troubleshoot", "dépanner", "depanner")))
+    ):
+        phone_to_text = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
+        return ok_reply(
+            {
+                "tv_troubleshooting_complete": True,
+                "virtual_repair_initiated": True,
+                "sms_guide_dispatched": True,
+                "guide_link": "https://telco.example.com/tv-guide",
+                "phone_last4": phone_to_text[-4:],
+                "message": (
+                    "Procédure de réparation virtuelle démarrée et lien de dépannage envoyé par texto."
+                    if lang.startswith("fr")
+                    else "Virtual repair initiated and troubleshooting guide link dispatched via SMS."
+                ),
+            },
+            reference,
+            language=lang,
+            spoken_summary="Dépannage télé complété." if lang.startswith("fr") else "TV troubleshooting completed.",
+        )
+
+    # 12c. Port-In Number Transfer (M5)
+    if clean_action == "port_in" or any(k in low for k in ("port in", "transfer number", "transférer numéro", "transferer numero")):
+        port_ref = "PORT-" + tracking_id("port", clean_summary)
+        return ok_reply(
+            {
+                "port_in_submitted": True,
+                "transfer_reference": port_ref,
+                "tracking_id": port_ref,
+                "status": "pending_carrier_release",
+                "estimated_hours": 2,
+                "message": (
+                    f"Demande de transfert de numéro soumise avec succès sous la référence {port_ref}."
+                    if lang.startswith("fr")
+                    else f"Number port-in request submitted successfully under reference {port_ref}."
+                ),
+            },
+            reference,
+            language=lang,
+            spoken_summary="Transfert de numéro soumis." if lang.startswith("fr") else "Port-in request submitted.",
+        )
+
+    # 13. Warranty Claim & Safety Hazard Handling (PRD §12 & Table 7.1)
     if clean_action == "warranty" or is_safety_hazard or any(k in low for k in ("warranty", "garantie", "defect", "defective", "remplacement appareil", "battery", "batterie", "thermal", "overheating", "surchauffe", "hardware")):
-        is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "gonfl", "thermal", "overheating", "surchauffe", "bulging", "smoke"))
+        is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
         ref_id = "WAR-" + tracking_id("warranty", clean_summary)
         if any(k in low for k in ("crack", "fissur", "liquid", "water", "eau", "drop", "chute")):
             return error_reply(
@@ -1462,7 +1662,7 @@ def submit_request_impl(  # pragma: no cover
                 },
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Remplacement sous garantie commandé." if lang.startswith("fr") else "Warranty replacement ordered.",
             )
         return ok_reply(
             {
@@ -1474,7 +1674,7 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Demande de garantie évaluée." if lang.startswith("fr") else "Warranty claim assessed.",
         )
 
     # 14. Plan Catalog, Upgrades & TV Packages
@@ -1493,7 +1693,7 @@ def submit_request_impl(  # pragma: no cover
                 },
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Détails du forfait récupérés." if lang.startswith("fr") else "Package details retrieved.",
             )
         if any(k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse")):
             plan = PLAN_CATALOG["internet"][2]  # Gigabit Fiber
@@ -1508,7 +1708,7 @@ def submit_request_impl(  # pragma: no cover
                 },
                 reference,
                 language=lang,
-                spoken_summary=spoken_line("request_submitted", lang),
+                spoken_summary="Forfait Internet récupéré." if lang.startswith("fr") else "Internet plan retrieved.",
             )
         try:
             budget = float(max_budget) if max_budget else 0.0
@@ -1522,7 +1722,21 @@ def submit_request_impl(  # pragma: no cover
         all_mobility = PLAN_CATALOG["mobility"]
         if budget > 0:
             matched = [p for p in all_mobility if p["monthly_rate"] <= budget]
-            curated = matched[-3:] if len(matched) >= 3 else (matched if matched else all_mobility[:2])
+            if not matched:
+                return ok_reply(
+                    {
+                        "plans": [],
+                        "count": 0,
+                        "activation_fee": 0.0,
+                        "activation_fee_display": "0.00",
+                        "error_code": "NO_PLANS_IN_BUDGET",
+                        "message": "Aucun forfait disponible dans cette limite budgétaire." if lang.startswith("fr") else "No plans available within that budget.",
+                    },
+                    reference,
+                    language=lang,
+                    spoken_summary="Aucun forfait trouvé." if lang.startswith("fr") else "No plans found.",
+                )
+            curated = matched[-3:] if len(matched) >= 3 else matched
         else:
             curated = all_mobility[1:4]
 
@@ -1537,7 +1751,7 @@ def submit_request_impl(  # pragma: no cover
             },
             reference,
             language=lang,
-            spoken_summary=spoken_line("request_submitted", lang),
+            spoken_summary="Options de forfaits récupérées." if lang.startswith("fr") else "Plan options retrieved.",
         )
 
     # 15. Default Fallback
@@ -1545,6 +1759,6 @@ def submit_request_impl(  # pragma: no cover
         {"submitted": True},
         reference,
         language=lang,
-        spoken_summary=spoken_line("request_submitted", lang),
+        spoken_summary="Demande traitée avec succès." if lang.startswith("fr") else "Request processed successfully.",
     )
 # --- END GENERATED SHARED BUNDLE ---

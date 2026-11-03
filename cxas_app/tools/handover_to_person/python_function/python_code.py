@@ -46,6 +46,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 import hashlib
+import math
 import re
 
 ERROR_CODES = (  # pragma: no cover
@@ -451,6 +452,8 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     state.setdefault("auth_failure_count", 0)
     state.setdefault("pin_failure_count", 0)
     state.setdefault("payment_failure_count", 0)
+    state.setdefault("past_due_balance", float(default_acct.get("past_due_balance", 85.50)))
+    state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
 
 MAX_LOGIN_ATTEMPTS = 3  # pragma: no cover
 

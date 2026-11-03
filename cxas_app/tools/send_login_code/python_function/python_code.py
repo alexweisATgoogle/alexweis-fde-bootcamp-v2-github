@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 import hashlib
+import math
 import re
 
 MAX_LOGIN_ATTEMPTS = 3  # pragma: no cover
@@ -372,6 +373,8 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     state.setdefault("auth_failure_count", 0)
     state.setdefault("pin_failure_count", 0)
     state.setdefault("payment_failure_count", 0)
+    state.setdefault("past_due_balance", float(default_acct.get("past_due_balance", 85.50)))
+    state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
 
 _DEFAULT_STATE: dict[str, Any] = {}  # pragma: no cover
 
@@ -514,142 +517,24 @@ def ok_reply(  # pragma: no cover
             reply[key] = payload[key]
     return reply
 
-SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
-    "greeting": {
-        "en-US": "Welcome to Telco. I can help with billing, technical support, or managing your account. To get started, could you tell me the phone number or account number associated with your service?",
-        "fr-CA": "Bienvenue chez Telco. Je peux vous aider avec la facturation, le soutien technique ou la gestion de votre compte. Pour commencer, pourriez-vous me donner le numéro de téléphone ou le numéro de compte associé à votre service?",
-        "es-US": "Bienvenido a Telco. Puedo ayudarlo con la facturación, soporte técnico o administración de su cuenta. Para comenzar, ¿podría decirme el número de teléfono o de cuenta asociado a su servicio?",
-    },
-    "greeting_main": {
-        "en-US": "Welcome to Telco. I can help with billing, technical support, or managing your account. To get started, could you tell me the phone number or account number associated with your service?",
-        "fr-CA": "Bienvenue chez Telco. Je peux vous aider avec la facturation, le soutien technique ou la gestion de votre compte. Pour commencer, pourriez-vous me donner le numéro de téléphone ou le numéro de compte associé à votre service?",
-        "es-US": "Bienvenido a Telco. Puedo ayudarlo con la facturación, soporte técnico o administración de su cuenta. Para comenzar, ¿podría decirme el número de teléfono o de cuenta asociado a su servicio?",
-    },
-    "code_sent": {
-        "en-US": "I've sent a login code to the phone number ending in {destination_last4}. Please read it to me when it arrives.",
-        "fr-CA": "J'ai envoyé un code de connexion au numéro se terminant par {destination_last4}. Lisez-le-moi dès que vous le recevez.",
-        "es-US": "He enviado un código de inicio de sesión al número terminado en {destination_last4}. Por favor léamelo en cuanto le llegue.",
-    },
-    "id_verification_otp": {
-        "en-US": "For your security, I just sent a 6-digit code to that number — please read it back to me.",
-        "fr-CA": "Pour votre sécurité, je viens d'envoyer un code à 6 chiffres à ce numéro — veuillez me le lire.",
-        "es-US": "Por su seguridad, acabo de enviar un código de 6 dígitos a ese número; por favor léamelo.",
-    },
-    "id_verification_pin": {
-        "en-US": "For your security, I'll need to verify your identity. Please enter the 4-digit PIN you set up.",
-        "fr-CA": "Pour votre sécurité, veuillez entrer le NIP à 4 chiffres associé à votre compte.",
-        "es-US": "Por su seguridad, necesitaré verificar su identidad. Ingrese el PIN de 4 dígitos que configuró.",
-    },
-    "handover": {
-        "en-US": "I'm transferring you to a member of our team now. Thank you for your patience.",
-        "fr-CA": "Je vous transfère maintenant à un membre de notre équipe. Merci de votre patience.",
-        "es-US": "Le transfiero ahora con un miembro de nuestro equipo. Gracias por su paciencia.",
-    },
-    "live_agent_handoff": {
-        "en-US": "I'll connect you to a representative who can help. Please hold.",
-        "fr-CA": "Je vous transfère à un représentant qui pourra vous aider. Veuillez patienter.",
-        "es-US": "Le transfiero a un representante que pueda ayudarlo. Por favor espere.",
-    },
-    "business_handoff": {
-        "en-US": "To get you the best support for your business account, I'll transfer you to an agent. You'll need to use your phone keypad instead of talking to the virtual assistant. Just a moment while I connect you.",
-        "fr-CA": "Afin d'obtenir le meilleur soutien pour votre compte d'affaires, je vous transfère à un agent. Vous devrez utiliser le clavier de votre téléphone plutôt que de parler à l'assistant virtuel. Un instant pendant que je vous transfère.",
-        "es-US": "Para brindarle la mejor asistencia para su cuenta comercial, lo transferiré con un agente. Deberá usar el teclado de su teléfono en lugar de hablar con el asistente virtual. Un momento mientras lo conecto.",
-    },
-    "payment_method_preamble": {
-        "en-US": "For your security and PCI compliance, please do not say your card number or security code aloud; enter payment digits using your phone keypad when prompted.",
-        "fr-CA": "Pour votre sécurité et par conformité aux normes PCI, veuillez ne pas dire votre numéro de carte ou code de sécurité à voix haute; entrez les chiffres à l'aide du clavier de votre téléphone.",
-        "es-US": "Por su seguridad y cumplimiento de PCI, no diga su número de tarjeta o código de seguridad en voz alta; ingrese los dígitos mediante el teclado cuando se le solicite.",
-    },
-    "contract_cancellation_fee_disclosure": {
-        "en-US": "Please note that cancelling your service or porting out your number ends your current agreement and may result in early cancellation fees and any remaining device balance becoming due on your next bill.",
-        "fr-CA": "Veuillez noter que l'annulation de votre service ou le transfert de votre numéro met fin à votre entente actuelle et peut entraîner des frais de résiliation anticipée ainsi que le solde d'appareil restant sur votre prochaine facture.",
-        "es-US": "Tenga en cuenta que cancelar su servicio o transferir su número finaliza su acuerdo actual y puede generar cargos por cancelación anticipada y cualquier saldo restante del dispositivo se vencerá en su próxima factura.",
-    },
-    "refund_confirmation_pattern": {
-        "en-US": "Your refund of $[amount] will appear on your next statement within [days] business days.",
-        "fr-CA": "Votre remboursement de [amount] $ apparaîtra sur votre prochain relevé dans un délai de [days] jours ouvrables.",
-        "es-US": "Su reembolso de $[amount] aparecerá en su próximo estado de cuenta dentro de [days] días hábiles.",
-    },
-    "empathy_protocol": {
-        "en-US": "I'm very sorry to hear that you are facing challenges. I will ensure we handle your request with the utmost care.",
-        "fr-CA": "Je suis sincèrement désolé d'apprendre que vous éprouvez des difficultés. Je vais m'assurer que nous traitions votre demande avec le plus grand soin.",
-        "es-US": "Lamento mucho saber que enfrenta dificultades. Me aseguraré de que manejemos su solicitud con el mayor cuidado.",
-    },
-    "outage_active": {
-        "en-US": "I see there's an active outage in your area. We're working on it. Would you like me to text you when it's restored?",
-        "fr-CA": "Je constate qu'il y a une panne active dans votre secteur. Nous y travaillons. Voulez-vous que je vous envoie un texto lorsque le service sera rétabli?",
-        "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
-    },
-    "transfer_to_specialist": {
-        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
-        "fr-CA": "Je vous transfère à un spécialiste de la facturation dès maintenant — il aura accès à tout ce dont nous avons déjà discuté.",
-        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
-    },
-    "auth_failure_handoff": {
-        "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",
-        "fr-CA": "Je n'ai pas pu vérifier votre identité. Pour votre sécurité, je vais vous transférer à un représentant du service à la clientèle.",
-        "es-US": "No pude verificar su identidad. Por su seguridad, lo transferiré a un representante de atención al cliente.",
-    },
-    "account_found": {
-        "en-US": "Account found for [first_name].",
-        "fr-CA": "Compte trouvé pour [first_name].",
-        "es-US": "Cuenta encontrada para [first_name].",
-    },
-    "code_verified": {
-        "en-US": "Login verified successfully.",
-        "fr-CA": "Connexion vérifiée avec succès.",
-        "es-US": "Inicio de sesión verificado con éxito.",
-    },
-    "already_verified": {
-        "en-US": "Account is already verified.",
-        "fr-CA": "Le compte est déjà vérifié.",
-        "es-US": "La cuenta ya está vérifiée.",
-    },
-    "pin_verified": {
-        "en-US": "Secret PIN verified successfully.",
-        "fr-CA": "NIP secret vérifié avec succès.",
-        "es-US": "PIN secreto verificado con éxito.",
-    },
-    "request_submitted": {
-        "en-US": "Your request has been submitted successfully.",
-        "fr-CA": "Votre demande a été soumise avec succès.",
-        "es-US": "Su solicitud ha sido enviada con éxito.",
-    },
-    "restricted_caller": {
-        "en-US": "This number is not authorized for telephone service. Please visit our website or a retail store for assistance.",
-        "fr-CA": "Ce numéro n'est pas autorisé pour le service téléphonique. Veuillez visiter notre site Web ou un magasin pour obtenir de l'aide.",
-        "es-US": "Este número no está autorizado para el servicio telefónico. Visite nuestro sitio web o una tienda para obtener ayuda.",
-    },
-    "ai_disclosure": {
-        "en-US": "I'm an artificial intelligence customer care assistant.",
-        "fr-CA": "Je suis un assistant de service à la clientèle basé sur l'intelligence artificielle.",
-        "es-US": "Soy un asistente de atención al cliente con inteligencia artificial.",
-    },
-    "malicious_closing": {
-        "en-US": "I am unable to continue this conversation. Thank you for calling and have a good day.",
-        "fr-CA": "Je ne peux pas poursuivre cette conversation. Merci de votre appel et bonne journée.",
-        "es-US": "No puedo continuar con esta conversación. Gracias por llamar y que tenga un buen día.",
-    },
-    "recording_notice": {
-        "en-US": "This call may be recorded for quality and training purposes.",
-        "fr-CA": "Cet appel peut être enregistré à des fins de qualité et de formation.",
-        "es-US": "Esta llamada puede ser grabada con fines de calidad y capacitación.",
-    },
-    "card_declined": {
-        "en-US": "That card was declined. Would you like to try another card or a different payment method?",
-        "fr-CA": "Cette carte a été refusée. Souhaitez-vous essayer une autre carte ou un autre mode de paiement?",
-        "es-US": "Esa tarjeta fue rechazada. ¿Desea probar con otra tarjeta o un método de pago diferente?",
-    },
-}
+def normalize_code(value: Any) -> str:  # pragma: no cover
+    """Coerce ints, floats (e.g. 5903.0), and formatted strings into a clean digit string."""
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return str(abs(value))
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(abs(value)))
+        return re.sub(r"\D", "", str(value))
+    text = str(value).strip()
+    if re.fullmatch(r"[+-]?\d+\.0+", text):
+        text = text.split(".", 1)[0]
+    return "".join(ch for ch in text if ch.isdigit())
 
-def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> str:  # pragma: no cover
-    """Return the fixed spoken line for `key` and `language`, filling any `[slot]` placeholders."""
-    locale = resolve_locale(language)
-    table = SPOKEN_LINES.get(key, {})
-    template = table.get(locale) or table.get("en-US") or ""
-    for slot_name, slot_val in slots.items():
-        template = template.replace(f"[{slot_name}]", str(slot_val)).replace(f"{{{slot_name}}}", str(slot_val))
-    return template
+def only_digits(text: Any) -> str:  # pragma: no cover
+    """Keep the digits of what the caller said ("(202) 555-0143" -> "2025550186")."""
+    return normalize_code(text)
 
 def send_login_code_impl(  # pragma: no cover
     state: dict[str, Any] | None = None,
@@ -672,12 +557,18 @@ def send_login_code_impl(  # pragma: no cover
             {"sent": False, "already_verified": True},
             reference,
             language=lang,
-            spoken_summary=spoken_line("already_verified", lang),
+            spoken_summary="Compte déjà vérifié." if lang.startswith("fr") else "Account already verified.",
         )
     failures = max(read_count(state, "auth_failure_count"), read_count(state, "login_attempts"))
     if state.get("auth_status") == "locked" or failures >= MAX_LOGIN_ATTEMPTS:
         state["auth_status"] = "locked"
         return locked_reply(reference, failures)
+    phone_or_account = kwargs.get("phone_or_account")
+    if phone_or_account:
+        raw_p = str(phone_or_account).strip()
+        p_digits = only_digits(raw_p)
+        if len(p_digits) >= 4:
+            state["caller_provided_phone_last4"] = p_digits[-4:]
     state["auth_status"] = "code_sent"
     state["login_code_sent"] = True
     dest_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
@@ -689,6 +580,6 @@ def send_login_code_impl(  # pragma: no cover
         },
         reference,
         language=lang,
-        spoken_summary=spoken_line("code_sent", lang, destination_last4=dest_last4),
+        spoken_summary="Code de connexion envoyé." if lang.startswith("fr") else "Login code sent.",
     )
 # --- END GENERATED SHARED BUNDLE ---

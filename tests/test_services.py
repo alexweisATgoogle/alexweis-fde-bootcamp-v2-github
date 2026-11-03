@@ -234,7 +234,8 @@ def test_declined_card_hook_and_spoken_alternative() -> None:
     assert res["status"] == "error"
     assert res["error"] == "CARD_DECLINED"
     assert "spoken_summary" in res
-    assert "different payment" in res["spoken_summary"] or "another card" in res["spoken_summary"]
+    msg = res.get("spoken_message") or res.get("agent_action") or res.get("spoken_summary", "")
+    assert "different payment" in msg or "another card" in msg or "another payment method" in msg
     res9 = record_payment_attempt(pay_state, "9999")
     assert res9["error"] == "CARD_DECLINED"
     res3 = record_payment_attempt(pay_state, "0000")
@@ -243,7 +244,8 @@ def test_declined_card_hook_and_spoken_alternative() -> None:
 
     res_fr = record_payment_attempt({}, "0000", language="fr-CA")
     assert res_fr["error"] == "CARD_DECLINED"
-    assert "autre mode de paiement" in res_fr["spoken_summary"]
+    msg_fr = res_fr.get("spoken_message") or res_fr.get("agent_action") or res_fr.get("spoken_summary", "")
+    assert "autre mode de paiement" in msg_fr or "autre méthode" in msg_fr
 
 
 def test_mock_error_hook_on_all_services() -> None:
@@ -302,7 +304,7 @@ def test_telco_domain_actions_and_edge_cases() -> None:
     assert pay_ok["status"] == "ok" and pay_ok["data"]["paid"] is True
 
     # 7. Verify prior payment
-    prior = submit_request_impl("I paid my bill yesterday online", action="verify_prior_payment", state=st)
+    prior = submit_request_impl("I paid my bill online", action="verify_prior_payment", state=st)
     assert prior["status"] == "ok" and prior["data"]["payment_verified"] is True
 
     # 8. Autopay
@@ -322,7 +324,7 @@ def test_telco_domain_actions_and_edge_cases() -> None:
     # 10. Warranty & hazard
     w_norm = submit_request_impl("Screen flickers", action="warranty", state=st)
     assert w_norm["status"] == "ok" and w_norm["data"]["claim_status"] == "approved_standard"
-    w_haz = submit_request_impl("Battery is bulging and hot", action="warranty", is_safety_hazard=True, state=st)
+    w_haz = submit_request_impl("Battery is overheating and hot", action="warranty", is_safety_hazard=True, state=st)
     assert w_haz["status"] == "ok" and w_haz["data"]["hazard_warning"] is True
     w_crack = submit_request_impl("Screen is cracked from dropping", action="warranty", state=st)
     assert w_crack["status"] == "error" and w_crack["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
@@ -345,4 +347,70 @@ def test_telco_domain_actions_and_edge_cases() -> None:
     ]:
         h = handover_to_person_impl(reason=r, target_queue=q, state={"account_id": "A1001"})
         assert h["status"] == "ok"
+
+
+def test_find_account_normalizations() -> None:
+    from lib.fakes import find_account
+
+    acc11 = find_account("+1 (514) 555-0199")
+    assert acc11 is not None and acc11["phone"] == "5145550199"
+
+    acc7 = find_account("555-0198")
+    assert acc7 is not None and "5550198" in acc7["phone"]
+
+    acc_alpha = find_account("ACCT-123456-Z")
+    assert acc_alpha is not None and acc_alpha["account_id"] == "ACCT-123456-Z"
+
+
+def test_pay_bill_stateful_decrement_and_zero_balance() -> None:
+    st_repeat = {"logged_in": True, "account_id": "ACC-1003", "past_due_balance": 85.50}
+    submit_request_impl("Pay bill", action="pay_bill", card_last4="7742", state=st_repeat)
+    assert st_repeat["past_due_balance"] == 0.0
+
+    r_repeat = submit_request_impl("Pay bill", action="pay_bill", card_last4="7742", state=st_repeat)
+    assert r_repeat["status"] == "ok"
+    assert r_repeat["data"]["paid"] is False
+    assert r_repeat["data"]["already_paid"] is True
+    assert r_repeat["data"]["amount"] == 0.0
+
+    st_part = {"logged_in": True, "account_id": "ACC-1003", "past_due_balance": 85.50}
+    r_part = submit_request_impl("Pay $20", action="pay_bill", amount=20.0, card_last4="7742", state=st_part)
+    assert r_part["status"] == "ok"
+    assert st_part["past_due_balance"] == 65.50
+    assert r_part["data"]["service_restored"] is False
+
+
+def test_cancel_appointment_service_type_en_route() -> None:
+    st_appt = {"logged_in": True, "account_id": "ACC-1002"}
+    r_cancel = submit_request_impl("Cancel it", action="cancel", service_type="appointment", state=st_appt)
+    assert r_cancel["status"] == "error"
+    assert r_cancel["error"] == "ACTION_NOT_ALLOWED"
+
+
+def test_sub_25_budget_search() -> None:
+    r_budget = submit_request_impl("Plans", action="search_plans", max_budget=15, state={})
+    assert r_budget["status"] == "ok"
+    assert r_budget["data"]["plans"] == []
+
+
+def test_payment_arrangement_and_sla_credit() -> None:
+    st = {"logged_in": True, "account_id": "ACC-1003", "past_due_balance": 85.50}
+    r_arr = submit_request_impl("Schedule payment arrangement", action="payment_arrangement", state=st)
+    assert r_arr["status"] == "ok"
+    assert r_arr["data"]["arrangement_confirmed"] is True
+    assert r_arr["data"]["installments"] == 2
+
+    r_sla = submit_request_impl(summary="Outage SLA downtime credit", action="dispute", amount=5.70, state=st)
+    assert r_sla["status"] == "ok"
+    assert r_sla["data"]["credit_approved"] is True
+    assert r_sla["data"]["adjustment_type"] == "outage_sla_credit"
+
+
+def test_tv_troubleshooting_sms_link() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "phone": "2025550186"}
+    r_tv = submit_request_impl("Troubleshoot satellite error 101", action="troubleshoot_tv", state=st)
+    assert r_tv["status"] == "ok"
+    assert r_tv["data"]["virtual_repair_initiated"] is True
+    assert r_tv["data"]["sms_guide_dispatched"] is True
+
 

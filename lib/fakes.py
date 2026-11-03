@@ -181,7 +181,7 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
 
 # Credentials & Ladder Constants
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(
-    {"9999", "999999", "8888", "0000"}  # overfit: allow
+    {"9999", "999999", "8888"}
 )
 VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})
 VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})
@@ -573,6 +573,8 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
     digits = normalize_code(raw_str)
+    if not has_alpha and len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
     canonical_id = ("A" + digits) if (raw.startswith("A") and len(digits) >= 4) else raw
     norm = normalize_identifier(raw_str)
     for record in ACCOUNTS:
@@ -595,6 +597,34 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
                 rec[k_last4] = rec["phone"][-4:]
                 rec[k_caller] = p_val[-4:]
                 return rec
+    if not has_alpha and len(digits) == 7:
+        for record in ACCOUNTS:
+            if record["phone"].endswith(digits):
+                rec = dict(record)
+                rec[k_last4] = rec["phone"][-4:]
+                rec[k_caller] = digits[-4:]
+                return rec
+        digits_10 = "202" + digits
+        return {
+            "account_id": "A" + digits_10[-6:],
+            "phone": digits_10,
+            k_last4: digits[-4:],
+            k_caller: digits[-4:],
+            "first_name": "",
+            "status": "active",
+            "preferred_language": "en-US",
+            "business_flag": False,
+            "card_last4": "7742",
+            "past_due_balance": 85.50,
+            "current_balance": 85.50,
+            "region": "Region-A",
+            "loyalty_limit": 25.0,
+            "mfa_enabled": False,
+            "active_services": ["mobile", "internet"],
+            "contract_end_date": relative_date(180),
+            "early_cancellation_fee": 150.00,
+            "payment_ledger": [],
+        }
     if not has_alpha and len(digits) in (9, 10):
         return {
             "account_id": "A" + digits[-6:],
@@ -614,18 +644,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [
-                {
-                    "payment_id": f"PMT-{digits[-5:]}",
-                    "amount": 85.50,
-                    "posted_date": relative_date(-1),
-                    "method": "online_banking",
-                    "status": "cleared",
-                }
-            ],
+            "payment_ledger": [],
         }
     if (
-        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Z]{2,4}-\d{4,8}", raw))
+        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
@@ -634,6 +656,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
+        base["payment_ledger"] = []
         return base
     return None
 
@@ -642,9 +665,8 @@ def login_code_accepted(code_digits: Any, attempts: int = 0, max_attempts: int =
     """Whether the fake login service accepts a code on this try (the login ladder).
 
     `attempts` is the number of wrong tries so far on this call:
-      - first try (attempts == 0): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
-      - later tries: only VALID_LOGIN_CODES;
-      - the last try (attempts == max_attempts - 1): always wrong, so the caller
+      - first and second tries (attempts < 2): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
+      - the last try (attempts >= max_attempts - 1): always wrong, so the caller
         is locked out and lockout tests behave the same every time.
     """
     digits = normalize_code(code_digits)
