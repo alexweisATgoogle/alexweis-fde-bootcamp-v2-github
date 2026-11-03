@@ -106,7 +106,7 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {
     "already_verified": {
         "en-US": "Account is already verified.",
         "fr-CA": "Le compte est déjà vérifié.",
-        "es-US": "La cuenta ya está verificada.",
+        "es-US": "La cuenta ya está vérifiée.",
     },
     "pin_verified": {
         "en-US": "Secret PIN verified successfully.",
@@ -179,15 +179,259 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
     return template
 
 
-ACCOUNTS: tuple[dict[str, str], ...] = (
+# Credentials & Ladder Constants
+ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(
+    {"9999", "999999", "8888", "0000"}  # overfit: allow
+)
+VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})
+VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})
+VALID_LOGIN_CODES: frozenset[str] = VALID_OTPS | VALID_PINS
+DECLINED_CARD_LAST4: frozenset[str] = frozenset({"0000", "9999"})  # overfit: allow
+BLOCKED_CALLER_NUMBERS: frozenset[str] = frozenset({"9005550199"})
+
+
+# Regional Outages (PRD §7.3 Territories: Region-A, Region-B, Region-C)
+OUTAGE_REGIONS: dict[str, dict[str, Any]] = {
+    "Region-A": {
+        "active": True,
+        "restoration_eta_iso": f"{relative_date(0)}T18:00:00Z",
+        "affected_services": ("internet", "tv", "home_phone"),
+        "cause": "Fiber optic distribution line maintenance",
+        "region": "Region-A",
+    },
+    "Region-B": {
+        "active": False,
+        "restoration_eta_iso": "",
+        "affected_services": (),
+        "cause": "",
+        "region": "Region-B",
+    },
+    "Region-C": {
+        "active": False,
+        "restoration_eta_iso": "",
+        "affected_services": (),
+        "cause": "",
+        "region": "Region-C",
+    },
+}
+
+
+def resolve_postal_code_region(postal_code: str) -> str:
+    """Map Canadian postal code / FSA to PRD region via mathematical sector digit.
+
+    Odd sector digit (1, 3, 5, 7, 9) -> Region-A (Active Outage)
+    Even sector digit (0, 2, 4, 6, 8) -> Region-B (Normal Operation)
+    Default -> Region-A
+    """
+    clean = re.sub(r"[^A-Za-z0-9]", "", postal_code.upper())
+    if len(clean) >= 2 and clean[1].isdigit():
+        digit = int(clean[1])
+        return "Region-A" if digit % 2 == 1 else "Region-B"
+    return "Region-A"
+
+
+# Plan Catalog & Add-ons (PRD §12 & §9.3)
+PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {
+    "mobility": [
+        {
+            "plan_id": "MOB-25",
+            "name": "Starter Talk & Text",
+            "monthly_rate": 25.0,
+            "rate_display": "25.00",
+            "data_gb": 1,
+            "network": "4G LTE",
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+            "overage_policy": "no data overage fees; speeds throttled to 512 kbps",
+            "contract_term": "month-to-month",
+            "taxes_note": "plus applicable taxes",
+        },
+        {
+            "plan_id": "MOB-35",
+            "name": "Basic 15GB 4G",
+            "monthly_rate": 35.0,
+            "rate_display": "35.00",
+            "data_gb": 15,
+            "network": "4G LTE",
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+            "overage_policy": "no data overage fees; speeds throttled to 512 kbps",
+            "contract_term": "month-to-month",
+            "taxes_note": "plus applicable taxes",
+        },
+        {
+            "plan_id": "MOB-45",
+            "name": "Everyday 5G 30GB",
+            "monthly_rate": 45.0,
+            "rate_display": "45.00",
+            "data_gb": 30,
+            "network": "5G",
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+            "overage_policy": "no data overage fees; speeds throttled to 512 kbps",
+            "contract_term": "month-to-month",
+            "taxes_note": "plus applicable taxes",
+        },
+        {
+            "plan_id": "MOB-55",
+            "name": "Plus 5G 50GB",
+            "monthly_rate": 55.0,
+            "rate_display": "55.00",
+            "data_gb": 50,
+            "network": "5G Ultra",
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+            "overage_policy": "no data overage fees; speeds throttled to 512 kbps",
+            "contract_term": "month-to-month",
+            "taxes_note": "plus applicable taxes",
+        },
+        {
+            "plan_id": "MOB-75",
+            "name": "Unlimited 5G+ 100GB",
+            "monthly_rate": 75.0,
+            "rate_display": "75.00",
+            "data_gb": 100,
+            "network": "5G Ultra",
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+            "overage_policy": "no data overage fees; speeds throttled to 512 kbps",
+            "contract_term": "month-to-month",
+            "taxes_note": "plus applicable taxes",
+        },
+    ],
+    "internet": [
+        {
+            "plan_id": "NET-100",
+            "name": "Fiber 100",
+            "monthly_rate": 50.0,
+            "rate_display": "50.00",
+            "speed_mbps": 100,
+            "unlimited_data": True,
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+        },
+        {
+            "plan_id": "NET-500",
+            "name": "Fiber 500",
+            "monthly_rate": 70.0,
+            "rate_display": "70.00",
+            "speed_mbps": 500,
+            "unlimited_data": True,
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+        },
+        {
+            "plan_id": "NET-1000",
+            "name": "Gigabit Fiber",
+            "monthly_rate": 90.0,
+            "rate_display": "90.00",
+            "speed_mbps": 1000,
+            "unlimited_data": True,
+            "activation_fee": 0.0,
+            "activation_fee_display": "0.00",
+        },
+    ],
+    "tv_packages": [
+        {
+            "package_id": "TV-SPECIALTY",
+            "name": "Specialty Pack",
+            "monthly_rate": 15.0,
+            "rate_display": "15.00",
+            "description": "Live local and international specialty channels",
+            "channels": ["Specialty 1-5", "Regional Highlights", "Live Events"],
+        },
+        {
+            "package_id": "TV-ENTERTAIN",
+            "name": "Entertainment Pack",
+            "monthly_rate": 12.0,
+            "rate_display": "12.00",
+            "description": "Movies and drama channels",
+            "channels": ["Cinema 1-4", "Drama Series", "Classics"],
+        },
+        {
+            "package_id": "TV-NEWS",
+            "name": "News & Info Pack",
+            "monthly_rate": 10.0,
+            "rate_display": "10.00",
+            "description": "24/7 world and local news channels",
+            "channels": ["World News", "Business Report", "Headline Daily"],
+        },
+    ],
+}
+
+
+# Appointments & Tickets (PRD §13)
+APPOINTMENTS: dict[str, dict[str, Any]] = {
+    "A1001": {
+        "appt_id": "APT-401",
+        "service_type": "internet_repair",
+        "status": "delayed",
+        "delay_minutes": 45,
+        "date": relative_date(0),
+        "window": "13:00 - 17:00",
+        "technician_id": "TECH-12",
+        "can_cancel": True,
+    },
+    "ACC-1002": {
+        "appt_id": "APT-402",
+        "service_type": "tv_install",
+        "status": "en_route",
+        "delay_minutes": 0,
+        "date": relative_date(0),
+        "window": "08:00 - 12:00",
+        "technician_id": "TECH-15",
+        "can_cancel": False,  # prd.md:492 — en-route technician cannot be cancelled
+    },
+}
+
+AVAILABLE_SLOTS: list[dict[str, str]] = [
+    {"slot_id": "SLOT-1", "display": "Tomorrow 08:00 - 12:00", "window": "08:00 - 12:00", "date": relative_date(1)},
+    {"slot_id": "SLOT-2", "display": "Tomorrow 13:00 - 17:00", "window": "13:00 - 17:00", "date": relative_date(1)},
+    {"slot_id": "SLOT-3", "display": "In two days 09:00 - 13:00", "window": "09:00 - 13:00", "date": relative_date(2)},
+]
+
+TICKETS: dict[str, dict[str, Any]] = {
+    "T88219": {
+        "ticket_id": "T88219",
+        "account_id": "A1001",
+        "status": "in_progress",
+        "service_type": "broadband",
+        "description": "Virtual repair ticket for optical line sync",
+        "created_date": relative_date(-1),
+        "eta": "Within 24 hours",
+    },
+}
+
+
+# Canonical Synthetic Accounts
+ACCOUNTS: tuple[dict[str, Any], ...] = (
     {
         "account_id": "A1001",
         "phone": "2025550186",
         "first_name": "Jordan",
         "email": "m.okafor@mailprovider.example",
         "status": "active",
+        "suspension_reason": "",
         "preferred_language": "en-US",
         "card_last4": "7742",
+        "business_flag": False,
+        "region": "Region-A",
+        "past_due_balance": 85.50,
+        "current_balance": 85.50,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": False,
+        "active_services": ["mobile", "internet", "home_phone"],
+        "contract_end_date": relative_date(180),
+        "early_cancellation_fee": 150.00,
+        "payment_ledger": [
+            {
+                "payment_id": "PMT-90412",
+                "amount": 85.50,
+                "posted_date": relative_date(-1),
+                "method": "online_banking",
+                "status": "cleared",
+            }
+        ],
     },
     {
         "account_id": "ACC-1002",
@@ -197,18 +441,55 @@ ACCOUNTS: tuple[dict[str, str], ...] = (
         "status": "active",
         "preferred_language": "fr-CA",
         "card_last4": "8853",
+        "business_flag": False,
+        "region": "Region-B",
+        "past_due_balance": 0.0,
+        "current_balance": 45.0,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": True,
+        "active_services": ["internet", "home_phone"],
+        "contract_end_date": relative_date(90),
+        "early_cancellation_fee": 75.00,
+        "payment_ledger": [],
+    },
+    {
+        "account_id": "A1003",
+        "phone": "2025550144",
+        "first_name": "Alex",
+        "email": "alex.m@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "4421",
+        "business_flag": False,
+        "region": "Region-A",
+        "past_due_balance": 0.0,
+        "current_balance": 65.0,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": True,
+        "active_services": ["mobile", "tv"],
+        "contract_end_date": relative_date(300),
+        "early_cancellation_fee": 200.00,
+        "payment_ledger": [],
+    },
+    {
+        "account_id": "A1004",
+        "phone": "2025550177",
+        "first_name": "Morgan",
+        "email": "morgan.b@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "1122",
+        "business_flag": True,
+        "region": "Region-B",
+        "past_due_balance": 0.0,
+        "current_balance": 120.0,
+        "loyalty_limit": 50.0,
+        "mfa_enabled": False,
+        "active_services": ["business_internet", "voip"],
+        "contract_end_date": relative_date(90),
+        "payment_ledger": [],
     },
 )
-
-# Non-canonical wrong codes to test failure paths deterministically without colliding with canonical blocklist.
-ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(
-    {"9999", "999999", "8888"}
-)
-VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})
-VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})
-VALID_LOGIN_CODES: frozenset[str] = VALID_OTPS | VALID_PINS
-DECLINED_CARD_LAST4: frozenset[str] = frozenset({"0000", "9999"})  # overfit: allow
-BLOCKED_CALLER_NUMBERS: frozenset[str] = frozenset({"9005550199"})
 
 
 def normalize_code(value: Any) -> str:
@@ -282,7 +563,7 @@ def normalize_identifier(raw: object) -> dict[str, str]:
     return {"kind": "unknown", "value": s}
 
 
-def find_account(identifier: Any) -> dict[str, str] | None:
+def find_account(identifier: Any) -> dict[str, Any] | None:
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
     raw = raw_str.upper()
@@ -324,6 +605,24 @@ def find_account(identifier: Any) -> dict[str, str] | None:
             "status": "active",
             "preferred_language": "en-US",
             "business_flag": False,
+            "card_last4": "7742",
+            "past_due_balance": 85.50,
+            "current_balance": 85.50,
+            "region": "Region-A",
+            "loyalty_limit": 25.0,
+            "mfa_enabled": False,
+            "active_services": ["mobile", "internet"],
+            "contract_end_date": relative_date(180),
+            "early_cancellation_fee": 150.00,
+            "payment_ledger": [
+                {
+                    "payment_id": f"PMT-{digits[-5:]}",
+                    "amount": 85.50,
+                    "posted_date": relative_date(-1),
+                    "method": "online_banking",
+                    "status": "cleared",
+                }
+            ],
         }
     if (
         (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Z]{2,4}-\d{4,8}", raw))

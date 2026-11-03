@@ -331,6 +331,60 @@
         "default": false,
         "required": []
       }
+    },
+    {
+      "name": "past_due_balance",
+      "description": "Past due balance on the active account in CAD.",
+      "schema": {
+        "type": "NUMBER",
+        "default": 0.0,
+        "required": []
+      }
+    },
+    {
+      "name": "mfa_enabled",
+      "description": "True when multi-factor authentication is enabled on the account.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "booked_slot",
+      "description": "The technician arrival window confirmed during appointment reschedule.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "region",
+      "description": "The service territory region (Region-A, Region-B, Region-C).",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "payment_verified",
+      "description": "True once prior payment has been verified on the account.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "suspension_reason",
+      "description": "Reason for account suspension (e.g. non_payment, lost_stolen).",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
     }
   ],
   "guardrails": [

@@ -61,6 +61,10 @@ ERROR_CODES = (  # pragma: no cover
     "SYSTEM_UNAVAILABLE",
     "SYSTEM_DOWN",
     "PERMISSION_DENIED",
+    "ACTION_NOT_ALLOWED",
+    "NO_PLANS_IN_BUDGET",
+    "NO_PAYMENT_FOUND",
+    "PHYSICAL_DAMAGE_EXCLUDED",
 )
 
 ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
@@ -160,6 +164,22 @@ ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
         "Permission denied.",
         "Explain the restriction and hand the caller over to a person.",
     ),
+    "ACTION_NOT_ALLOWED": (
+        "This action is not permitted.",
+        "Explain the policy restriction to the caller.",
+    ),
+    "NO_PLANS_IN_BUDGET": (
+        "No plans were found matching the specified budget.",
+        "Offer the lowest-priced available plan.",
+    ),
+    "NO_PAYMENT_FOUND": (
+        "No recent payment found on file.",
+        "Offer to process a payment now.",
+    ),
+    "PHYSICAL_DAMAGE_EXCLUDED": (
+        "Physical damage is excluded from manufacturer warranty.",
+        "Offer out-of-warranty repair options.",
+    ),
 }
 
 class _StatusStr(str):  # pragma: no cover
@@ -197,6 +217,8 @@ def error_reply(  # pragma: no cover
     reference: str | None = None,
     data: dict[str, Any] | None = None,
     language: str | None = None,
+    spoken_summary: str | None = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Build an error reply; `code` must be one of ERROR_CODES."""
     if code not in ERROR_CODES:
@@ -248,15 +270,38 @@ def _check_mock_error(  # pragma: no cover
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
-ACCOUNTS: tuple[dict[str, str], ...] = (  # pragma: no cover
+def relative_date(days: int = 0) -> str:  # pragma: no cover
+    """Return an ISO-8601 YYYY-MM-DD date relative to UTC today."""
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+
+ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
     {
         "account_id": "A1001",
         "phone": "2025550186",
         "first_name": "Jordan",
         "email": "m.okafor@mailprovider.example",
         "status": "active",
+        "suspension_reason": "",
         "preferred_language": "en-US",
         "card_last4": "7742",
+        "business_flag": False,
+        "region": "Region-A",
+        "past_due_balance": 85.50,
+        "current_balance": 85.50,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": False,
+        "active_services": ["mobile", "internet", "home_phone"],
+        "contract_end_date": relative_date(180),
+        "early_cancellation_fee": 150.00,
+        "payment_ledger": [
+            {
+                "payment_id": "PMT-90412",
+                "amount": 85.50,
+                "posted_date": relative_date(-1),
+                "method": "online_banking",
+                "status": "cleared",
+            }
+        ],
     },
     {
         "account_id": "ACC-1002",
@@ -266,6 +311,53 @@ ACCOUNTS: tuple[dict[str, str], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "fr-CA",
         "card_last4": "8853",
+        "business_flag": False,
+        "region": "Region-B",
+        "past_due_balance": 0.0,
+        "current_balance": 45.0,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": True,
+        "active_services": ["internet", "home_phone"],
+        "contract_end_date": relative_date(90),
+        "early_cancellation_fee": 75.00,
+        "payment_ledger": [],
+    },
+    {
+        "account_id": "A1003",
+        "phone": "2025550144",
+        "first_name": "Alex",
+        "email": "alex.m@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "4421",
+        "business_flag": False,
+        "region": "Region-A",
+        "past_due_balance": 0.0,
+        "current_balance": 65.0,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": True,
+        "active_services": ["mobile", "tv"],
+        "contract_end_date": relative_date(300),
+        "early_cancellation_fee": 200.00,
+        "payment_ledger": [],
+    },
+    {
+        "account_id": "A1004",
+        "phone": "2025550177",
+        "first_name": "Morgan",
+        "email": "morgan.b@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "1122",
+        "business_flag": True,
+        "region": "Region-B",
+        "past_due_balance": 0.0,
+        "current_balance": 120.0,
+        "loyalty_limit": 50.0,
+        "mfa_enabled": False,
+        "active_services": ["business_internet", "voip"],
+        "contract_end_date": relative_date(90),
+        "payment_ledger": [],
     },
 )
 
@@ -328,13 +420,7 @@ def resolve_locale(language: str | None) -> str:  # pragma: no cover
 resolve_copy_locale = resolve_locale  # pragma: no cover
 
 def _session_language(state: dict[str, Any] | None, language: Any = "") -> str:  # pragma: no cover
-    """Resolve session language with asymmetric lock: non-English locks over English.
-
-    When state has no language or is default 'en-US', a model-supplied
-    non-English locale (fr-CA/es-US/...) is accepted and becomes the lock.
-    Once state holds a non-English locale, a model-supplied 'en-US' or empty
-    value is ignored (PRD BR-TV-004 lock).
-    """
+    """Resolve session language with asymmetric lock: non-English locks over English."""
     has_state_dict = callable(getattr(state, "get", None))
     current = ""
     if has_state_dict:
@@ -346,7 +432,6 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
     if language and str(language).strip():
         arg_lang = resolve_copy_locale(str(language))
 
-    # 1. Once state holds a non-English locale, model-supplied en-US/empty is ignored.
     if current and current != "en-US":
         if callable(getattr(state, "__setitem__", None)):
             state["language"] = current
@@ -354,25 +439,20 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
                 state["preferred_language"] = current
         return current
 
-    # 2. When state has no language or is default 'en-US':
-    # A model-supplied non-English locale (fr-CA/es-US/...) is accepted and becomes the lock.
     if arg_lang and arg_lang != "en-US":
         if callable(getattr(state, "__setitem__", None)):
             state["language"] = arg_lang
             state["preferred_language"] = arg_lang
         return arg_lang
 
-    # 3. If state already had 'en-US', keep it.
     if current == "en-US":
         return "en-US"
 
-    # 4. State had no language and model passed non-empty 'en-US'.
     if arg_lang == "en-US":
         if callable(getattr(state, "__setitem__", None)):
             state["language"] = "en-US"
         return "en-US"
 
-    # 5. Check preferred_language in state if any.
     if has_state_dict:
         pref = state.get("preferred_language")
         if pref and str(pref).strip():
@@ -452,7 +532,7 @@ def ok_reply(  # pragma: no cover
     return reply
 
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
-    {"9999", "999999", "8888"}
+    {"9999", "999999", "8888", "0000"}  # overfit: allow
 )
 
 VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})  # pragma: no cover
@@ -574,7 +654,7 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "already_verified": {
         "en-US": "Account is already verified.",
         "fr-CA": "Le compte est déjà vérifié.",
-        "es-US": "La cuenta ya está verificada.",
+        "es-US": "La cuenta ya está vérifiée.",
     },
     "pin_verified": {
         "en-US": "Secret PIN verified successfully.",

@@ -164,7 +164,7 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "already_verified": {
         "en-US": "Account is already verified.",
         "fr-CA": "Le compte est déjà vérifié.",
-        "es-US": "La cuenta ya está verificada.",
+        "es-US": "La cuenta ya está vérifiée.",
     },
     "pin_verified": {
         "en-US": "Secret PIN verified successfully.",
@@ -256,7 +256,7 @@ def build_language_sheet(locale: str, agent_name: str = "router") -> str:  # pra
         )
 
     lines.append("</active_language_sheet>")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 _DP_EXPLICIT_SWITCH_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (  # pragma: no cover
     ("fr-CA", ("en français", "en francais", "parlez-vous français", "parlez vous francais", "in french", "speak french", "french please", "switch to french")),
@@ -483,7 +483,7 @@ def apply_language_prompt_filter(  # pragma: no cover
     def _update_text(text: str) -> str:
         if LANGUAGE_SHEET_SENTINEL in text:
             text = text.split(LANGUAGE_SHEET_SENTINEL, 1)[0].rstrip()
-        return f"{text}\\n\\n{sheet}"
+        return f"{text}\n\n{sheet}"
 
     if isinstance(sys_inst, str):
         config.system_instruction = _update_text(sys_inst)

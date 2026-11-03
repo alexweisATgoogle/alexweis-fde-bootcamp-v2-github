@@ -35,6 +35,97 @@ from typing import Any
 import hashlib
 import re
 
+def relative_date(days: int = 0) -> str:  # pragma: no cover
+    """Return an ISO-8601 YYYY-MM-DD date relative to UTC today."""
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+
+ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
+    {
+        "account_id": "A1001",
+        "phone": "2025550186",
+        "first_name": "Jordan",
+        "email": "m.okafor@mailprovider.example",
+        "status": "active",
+        "suspension_reason": "",
+        "preferred_language": "en-US",
+        "card_last4": "7742",
+        "business_flag": False,
+        "region": "Region-A",
+        "past_due_balance": 85.50,
+        "current_balance": 85.50,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": False,
+        "active_services": ["mobile", "internet", "home_phone"],
+        "contract_end_date": relative_date(180),
+        "early_cancellation_fee": 150.00,
+        "payment_ledger": [
+            {
+                "payment_id": "PMT-90412",
+                "amount": 85.50,
+                "posted_date": relative_date(-1),
+                "method": "online_banking",
+                "status": "cleared",
+            }
+        ],
+    },
+    {
+        "account_id": "ACC-1002",
+        "phone": "2025550198",
+        "first_name": "Taylor",
+        "email": "taylor.r@mailprovider.example",
+        "status": "active",
+        "preferred_language": "fr-CA",
+        "card_last4": "8853",
+        "business_flag": False,
+        "region": "Region-B",
+        "past_due_balance": 0.0,
+        "current_balance": 45.0,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": True,
+        "active_services": ["internet", "home_phone"],
+        "contract_end_date": relative_date(90),
+        "early_cancellation_fee": 75.00,
+        "payment_ledger": [],
+    },
+    {
+        "account_id": "A1003",
+        "phone": "2025550144",
+        "first_name": "Alex",
+        "email": "alex.m@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "4421",
+        "business_flag": False,
+        "region": "Region-A",
+        "past_due_balance": 0.0,
+        "current_balance": 65.0,
+        "loyalty_limit": 25.0,
+        "mfa_enabled": True,
+        "active_services": ["mobile", "tv"],
+        "contract_end_date": relative_date(300),
+        "early_cancellation_fee": 200.00,
+        "payment_ledger": [],
+    },
+    {
+        "account_id": "A1004",
+        "phone": "2025550177",
+        "first_name": "Morgan",
+        "email": "morgan.b@mailprovider.example",
+        "status": "active",
+        "preferred_language": "en-US",
+        "card_last4": "1122",
+        "business_flag": True,
+        "region": "Region-B",
+        "past_due_balance": 0.0,
+        "current_balance": 120.0,
+        "loyalty_limit": 50.0,
+        "mfa_enabled": False,
+        "active_services": ["business_internet", "voip"],
+        "contract_end_date": relative_date(90),
+        "payment_ledger": [],
+    },
+)
+
 BLOCKED_CALLER_NUMBERS: frozenset[str] = frozenset({"9005550199"})  # pragma: no cover
 
 ERROR_CODES = (  # pragma: no cover
@@ -62,6 +153,10 @@ ERROR_CODES = (  # pragma: no cover
     "SYSTEM_UNAVAILABLE",
     "SYSTEM_DOWN",
     "PERMISSION_DENIED",
+    "ACTION_NOT_ALLOWED",
+    "NO_PLANS_IN_BUDGET",
+    "NO_PAYMENT_FOUND",
+    "PHYSICAL_DAMAGE_EXCLUDED",
 )
 
 ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
@@ -161,6 +256,22 @@ ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
         "Permission denied.",
         "Explain the restriction and hand the caller over to a person.",
     ),
+    "ACTION_NOT_ALLOWED": (
+        "This action is not permitted.",
+        "Explain the policy restriction to the caller.",
+    ),
+    "NO_PLANS_IN_BUDGET": (
+        "No plans were found matching the specified budget.",
+        "Offer the lowest-priced available plan.",
+    ),
+    "NO_PAYMENT_FOUND": (
+        "No recent payment found on file.",
+        "Offer to process a payment now.",
+    ),
+    "PHYSICAL_DAMAGE_EXCLUDED": (
+        "Physical damage is excluded from manufacturer warranty.",
+        "Offer out-of-warranty repair options.",
+    ),
 }
 
 class _StatusStr(str):  # pragma: no cover
@@ -198,6 +309,8 @@ def error_reply(  # pragma: no cover
     reference: str | None = None,
     data: dict[str, Any] | None = None,
     language: str | None = None,
+    spoken_summary: str | None = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Build an error reply; `code` must be one of ERROR_CODES."""
     if code not in ERROR_CODES:
@@ -296,13 +409,7 @@ def resolve_locale(language: str | None) -> str:  # pragma: no cover
 resolve_copy_locale = resolve_locale  # pragma: no cover
 
 def _session_language(state: dict[str, Any] | None, language: Any = "") -> str:  # pragma: no cover
-    """Resolve session language with asymmetric lock: non-English locks over English.
-
-    When state has no language or is default 'en-US', a model-supplied
-    non-English locale (fr-CA/es-US/...) is accepted and becomes the lock.
-    Once state holds a non-English locale, a model-supplied 'en-US' or empty
-    value is ignored (PRD BR-TV-004 lock).
-    """
+    """Resolve session language with asymmetric lock: non-English locks over English."""
     has_state_dict = callable(getattr(state, "get", None))
     current = ""
     if has_state_dict:
@@ -314,7 +421,6 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
     if language and str(language).strip():
         arg_lang = resolve_copy_locale(str(language))
 
-    # 1. Once state holds a non-English locale, model-supplied en-US/empty is ignored.
     if current and current != "en-US":
         if callable(getattr(state, "__setitem__", None)):
             state["language"] = current
@@ -322,25 +428,20 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
                 state["preferred_language"] = current
         return current
 
-    # 2. When state has no language or is default 'en-US':
-    # A model-supplied non-English locale (fr-CA/es-US/...) is accepted and becomes the lock.
     if arg_lang and arg_lang != "en-US":
         if callable(getattr(state, "__setitem__", None)):
             state["language"] = arg_lang
             state["preferred_language"] = arg_lang
         return arg_lang
 
-    # 3. If state already had 'en-US', keep it.
     if current == "en-US":
         return "en-US"
 
-    # 4. State had no language and model passed non-empty 'en-US'.
     if arg_lang == "en-US":
         if callable(getattr(state, "__setitem__", None)):
             state["language"] = "en-US"
         return "en-US"
 
-    # 5. Check preferred_language in state if any.
     if has_state_dict:
         pref = state.get("preferred_language")
         if pref and str(pref).strip():
@@ -352,27 +453,6 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
             return "en-US"
 
     return resolve_copy_locale(None)
-
-ACCOUNTS: tuple[dict[str, str], ...] = (  # pragma: no cover
-    {
-        "account_id": "A1001",
-        "phone": "2025550186",
-        "first_name": "Jordan",
-        "email": "m.okafor@mailprovider.example",
-        "status": "active",
-        "preferred_language": "en-US",
-        "card_last4": "7742",
-    },
-    {
-        "account_id": "ACC-1002",
-        "phone": "2025550198",
-        "first_name": "Taylor",
-        "email": "taylor.r@mailprovider.example",
-        "status": "active",
-        "preferred_language": "fr-CA",
-        "card_last4": "8853",
-    },
-)
 
 def normalize_code(value: Any) -> str:  # pragma: no cover
     """Coerce ints, floats (e.g. 5903.0), and formatted strings into a clean digit string."""
@@ -428,7 +508,7 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
         return {"kind": "account", "value": compact}
     return {"kind": "unknown", "value": s}
 
-def find_account(identifier: Any) -> dict[str, str] | None:  # pragma: no cover
+def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
     raw = raw_str.upper()
@@ -470,6 +550,24 @@ def find_account(identifier: Any) -> dict[str, str] | None:  # pragma: no cover
             "status": "active",
             "preferred_language": "en-US",
             "business_flag": False,
+            "card_last4": "7742",
+            "past_due_balance": 85.50,
+            "current_balance": 85.50,
+            "region": "Region-A",
+            "loyalty_limit": 25.0,
+            "mfa_enabled": False,
+            "active_services": ["mobile", "internet"],
+            "contract_end_date": relative_date(180),
+            "early_cancellation_fee": 150.00,
+            "payment_ledger": [
+                {
+                    "payment_id": f"PMT-{digits[-5:]}",
+                    "amount": 85.50,
+                    "posted_date": relative_date(-1),
+                    "method": "online_banking",
+                    "status": "cleared",
+                }
+            ],
         }
     if (
         (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Z]{2,4}-\d{4,8}", raw))
@@ -613,7 +711,7 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "already_verified": {
         "en-US": "Account is already verified.",
         "fr-CA": "Le compte est déjà vérifié.",
-        "es-US": "La cuenta ya está verificada.",
+        "es-US": "La cuenta ya está vérifiée.",
     },
     "pin_verified": {
         "en-US": "Secret PIN verified successfully.",
@@ -675,41 +773,46 @@ def lookup_account_impl(  # pragma: no cover
     if mock_err:
         return mock_err
     reference = tracking_id("lookup_account", phone_or_account)
-    if not str(phone_or_account or "").strip():
+
+    raw_ident = str(phone_or_account or "").strip()
+    if raw_ident.lower() in ("caller_line_id", "current_line", "ani"):
+        account = dict(ACCOUNTS[0])
+    elif not raw_ident:
         return error_reply(
             "INVALID_INPUT",
             "No phone number or account number was given.",
             "Ask the caller for the phone number or account number on the account.",
             reference,
         )
-    digits = only_digits(phone_or_account)
-    norm_digits = digits[1:] if (len(digits) == 11 and digits.startswith("1")) else digits
-    if digits in BLOCKED_CALLER_NUMBERS or norm_digits in BLOCKED_CALLER_NUMBERS:
-        state["is_blocked"] = True
-        blocked_msg = spoken_line("restricted_caller", lang)
-        state["last_tracking_id"] = reference
-        return error_reply(
-            "PERMISSION_DENIED",
-            message=blocked_msg,
-            agent_action="Speak the restricted caller notice and end the session.",
-            reference=reference,
-            language=lang,
-            data={
-                "blocked": True,
-                "spoken_message": blocked_msg,
-                "spoken_summary": blocked_msg,
-            },
-        )
-    account = find_account(phone_or_account)
-    if account is None:
-        return error_reply(
-            "NOT_FOUND",
-            "No account matches that number.",
-            "Ask the caller to say the number again, one digit at a time.",
-            reference,
-        )
+    else:
+        digits = only_digits(raw_ident)
+        norm_digits = digits[1:] if (len(digits) == 11 and digits.startswith("1")) else digits
+        if digits in BLOCKED_CALLER_NUMBERS or norm_digits in BLOCKED_CALLER_NUMBERS:
+            state["is_blocked"] = True
+            blocked_msg = spoken_line("restricted_caller", lang)
+            state["last_tracking_id"] = reference
+            return error_reply(
+                "PERMISSION_DENIED",
+                message=blocked_msg,
+                agent_action="Speak the restricted caller notice and end the session.",
+                reference=reference,
+                language=lang,
+                data={
+                    "blocked": True,
+                    "spoken_message": blocked_msg,
+                    "spoken_summary": blocked_msg,
+                },
+            )
+        account = find_account(raw_ident)
+        if account is None:
+            return error_reply(
+                "NOT_FOUND",
+                "No account matches that number.",
+                "Ask the caller to say the number again, one digit at a time.",
+                reference,
+            )
+
     if state.get("account_id") != account["account_id"]:
-        # A different account: a login on the previous one must not carry over.
         state["auth_status"] = "none"
         state["logged_in"] = False
         state["login_code_sent"] = False
@@ -717,9 +820,10 @@ def lookup_account_impl(  # pragma: no cover
         state["login_attempts"] = 0
         state["pin_failure_count"] = 0
         state["pin_attempts"] = 0
+
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]
-    ident = normalize_identifier(phone_or_account)
+    ident = normalize_identifier(raw_ident)
     if ident["kind"] in ("phone", "international_phone"):
         caller_digits = only_digits(ident["value"])
         if len(caller_digits) >= 4:
@@ -728,12 +832,13 @@ def lookup_account_impl(  # pragma: no cover
             state["caller_provided_phone_last4"] = account.get("caller_provided_phone_last4", "")
     else:
         state["caller_provided_phone_last4"] = account.get("caller_provided_phone_last4", "")
+
     if account.get("preferred_language") and not state.get("preferred_language"):
         state["preferred_language"] = account["preferred_language"]
     state["last_tracking_id"] = reference
 
     is_biz = bool(account.get("business_flag")) or any(
-        w in str(phone_or_account).lower() for w in ("business", "entreprise", "commercial", "bus-")
+        w in raw_ident.lower() for w in ("business", "entreprise", "commercial", "bus-")
     ) or any(
         w in str(state.get("last_user_utterance", "")).lower() for w in ("business", "entreprise", "commercial")
     )
@@ -745,10 +850,10 @@ def lookup_account_impl(  # pragma: no cover
         return ok_reply(
             {
                 "account_id": account["account_id"],
-                "first_name": account["first_name"],
+                "first_name": account.get("first_name", ""),
                 "phone_last4": account["phone"][-4:],
                 "caller_provided_phone_last4": state["caller_provided_phone_last4"],
-                "account_status": account["status"],
+                "account_status": account.get("status", "active"),
                 "business_flag": True,
                 "handoff_message": b_msg,
             },
@@ -761,10 +866,10 @@ def lookup_account_impl(  # pragma: no cover
     return ok_reply(
         {
             "account_id": account["account_id"],
-            "first_name": account["first_name"],
+            "first_name": account.get("first_name", ""),
             "phone_last4": account["phone"][-4:],
             "caller_provided_phone_last4": state["caller_provided_phone_last4"],
-            "account_status": account["status"],
+            "account_status": account.get("status", "active"),
         },
         reference,
         language=lang,

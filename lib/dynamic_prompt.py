@@ -1,4 +1,3 @@
-\
 """Dynamic multilingual prompt injection via read-only before_model_callback.
 
 Detects active conversation language (filtering out ADK relay/agent event parts)
@@ -320,7 +319,7 @@ def build_language_sheet(locale: str, agent_name: str = "router") -> str:
         )
 
     lines.append("</active_language_sheet>")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def apply_language_prompt_filter(
@@ -344,7 +343,7 @@ def apply_language_prompt_filter(
     def _update_text(text: str) -> str:
         if LANGUAGE_SHEET_SENTINEL in text:
             text = text.split(LANGUAGE_SHEET_SENTINEL, 1)[0].rstrip()
-        return f"{text}\\n\\n{sheet}"
+        return f"{text}\n\n{sheet}"
 
     if isinstance(sys_inst, str):
         config.system_instruction = _update_text(sys_inst)

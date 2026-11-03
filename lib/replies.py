@@ -63,6 +63,10 @@ ERROR_CODES = (
     "SYSTEM_UNAVAILABLE",
     "SYSTEM_DOWN",
     "PERMISSION_DENIED",
+    "ACTION_NOT_ALLOWED",
+    "NO_PLANS_IN_BUDGET",
+    "NO_PAYMENT_FOUND",
+    "PHYSICAL_DAMAGE_EXCLUDED",
 )
 
 ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {
@@ -162,6 +166,22 @@ ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {
         "Permission denied.",
         "Explain the restriction and hand the caller over to a person.",
     ),
+    "ACTION_NOT_ALLOWED": (
+        "This action is not permitted.",
+        "Explain the policy restriction to the caller.",
+    ),
+    "NO_PLANS_IN_BUDGET": (
+        "No plans were found matching the specified budget.",
+        "Offer the lowest-priced available plan.",
+    ),
+    "NO_PAYMENT_FOUND": (
+        "No recent payment found on file.",
+        "Offer to process a payment now.",
+    ),
+    "PHYSICAL_DAMAGE_EXCLUDED": (
+        "Physical damage is excluded from manufacturer warranty.",
+        "Offer out-of-warranty repair options.",
+    ),
 }
 
 
@@ -235,6 +255,8 @@ def error_reply(
     reference: str | None = None,
     data: dict[str, Any] | None = None,
     language: str | None = None,
+    spoken_summary: str | None = None,
+    **kwargs: Any,
 ) -> dict[str, Any]:
     """Build an error reply; `code` must be one of ERROR_CODES."""
     if code not in ERROR_CODES:

@@ -261,3 +261,88 @@ def test_mock_error_hook_on_all_services() -> None:
         reply = fn(**kwargs, state=st)
         assert reply["status"] == "error", f"{name} did not return error: {reply}"
         assert reply["error"] == "SYSTEM_UNAVAILABLE", f"{name} got error {reply.get('error')}"
+
+
+def test_telco_domain_actions_and_edge_cases() -> None:
+    st: dict[str, Any] = {"account_id": "A1001", "auth_status": "pass", "logged_in": True, "past_due_balance": 85.50}
+
+    # 1. Outage checks (no login required)
+    out_a = submit_request_impl("Any outages?", action="outage_check", postal_code="K1A 0B1", state={})
+    assert out_a["status"] == "ok" and out_a["data"]["region"] == "Region-A"
+    out_b = submit_request_impl("Any outages?", action="outage_check", postal_code="K2A 0B1", state={})
+    assert out_b["status"] == "ok" and out_b["data"]["region"] == "Region-B"
+
+    # 2. Password reset (identified only)
+    pw = submit_request_impl("Reset password", action="password_reset", state={"phone_last4": "0186"})
+    assert pw["status"] == "ok" and pw["data"]["sms_sent"] is True
+
+    # 3. Tickets
+    tkt = submit_request_impl("Check ticket T88219", action="check_ticket", state={})
+    assert tkt["status"] == "ok" and tkt["data"]["ticket_id"] == "T88219"
+
+    # 4. Appointment arrival & reschedule
+    appt = submit_request_impl("Technician status", action="check_appointment", state=st)
+    assert appt["status"] == "ok" and "available_slots" in appt["data"]
+    resched = submit_request_impl("Reschedule tomorrow", action="reschedule", slot="SLOT-1", state=st)
+    assert resched["status"] == "ok" and resched["data"]["rescheduled"] is True
+    # Appointment cancel en-route blocked
+    cancel_en_route = submit_request_impl("Cancel technician appointment", action="cancel", state={"account_id": "ACC-1002", "auth_status": "pass", "logged_in": True})
+    assert cancel_en_route["status"] == "error" and cancel_en_route["error"] == "ACTION_NOT_ALLOWED"
+
+    # 5. Billing dispute auto-credit vs threshold
+    disp_small = submit_request_impl("Dispute 15 dollar charge", action="dispute", amount=15.0, state=st)
+    assert disp_small["status"] == "ok" and disp_small["data"]["refund_approved"] is True
+    disp_large = submit_request_impl("Dispute 50 dollar charge", action="dispute", amount=50.0, state=st)
+    assert disp_large["status"] == "error" and disp_large["error"] == "LIMIT_EXCEEDED"
+
+    # 6. Bill payment
+    pay_bad = submit_request_impl("Pay bill", action="pay_bill", card_last4="0000", state=st)
+    assert pay_bad["status"] == "error" and pay_bad["error"] == "CARD_DECLINED"
+    pay_ok = submit_request_impl("Pay bill", action="pay_bill", card_last4="7742", amount=85.50, state=st)
+    assert pay_ok["status"] == "ok" and pay_ok["data"]["paid"] is True
+
+    # 7. Verify prior payment
+    prior = submit_request_impl("I paid my bill yesterday online", action="verify_prior_payment", state=st)
+    assert prior["status"] == "ok" and prior["data"]["payment_verified"] is True
+
+    # 8. Autopay
+    ap = submit_request_impl("Setup autopay", action="enroll_autopay", card_last4="7742", state=st)
+    assert ap["status"] == "ok" and ap["data"]["autopay_enrolled"] is True
+
+    # 9. Address change & MFA & Cancellation
+    addr = submit_request_impl("Update mailing address to 123 Main St", action="change_address", state=st)
+    assert addr["status"] == "ok" and addr["data"]["submitted"] is True
+    mfa_off = submit_request_impl("Turn off two factor auth", action="disable_mfa", state=st)
+    assert mfa_off["status"] == "ok" and mfa_off["data"]["mfa_enabled"] is False
+    mfa_on = submit_request_impl("Turn on two factor auth", action="enable_mfa", state=st)
+    assert mfa_on["status"] == "ok" and mfa_on["data"]["mfa_enabled"] is True
+    canc = submit_request_impl("Cancel my home phone", action="cancel", service_type="home_phone", state=st)
+    assert canc["status"] == "ok" and canc["data"]["cancelled"] is True
+
+    # 10. Warranty & hazard
+    w_norm = submit_request_impl("Screen flickers", action="warranty", state=st)
+    assert w_norm["status"] == "ok" and w_norm["data"]["claim_status"] == "approved_standard"
+    w_haz = submit_request_impl("Battery is bulging and hot", action="warranty", is_safety_hazard=True, state=st)
+    assert w_haz["status"] == "ok" and w_haz["data"]["hazard_warning"] is True
+    w_crack = submit_request_impl("Screen is cracked from dropping", action="warranty", state=st)
+    assert w_crack["status"] == "error" and w_crack["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
+
+    # 11. Plans & catalog
+    p_tv = submit_request_impl("Add specialty channels package", action="add_package", state=st)
+    assert p_tv["status"] == "ok" and "channels" in p_tv["data"]
+    p_fiber = submit_request_impl("Upgrade internet speed to gigabit fiber", action="upgrade_plan", state=st)
+    assert p_fiber["status"] == "ok" and p_fiber["data"]["speed_mbps"] == 1000
+    p_mob = submit_request_impl("Find mobility plan under 55", action="search_plans", max_budget=55.0, state=st)
+    assert p_mob["status"] == "ok" and len(p_mob["data"]["plans"]) > 0
+
+    # 12. Handover target queues
+    for q, r in [
+        ("fraud", "fraud"),
+        ("business", "business"),
+        ("billing_specialist", "refund_threshold_exceeded"),
+        ("tier2_auth", "auth_failure_handoff"),
+        ("french_technical_support", "secondary_language_live_agent"),
+    ]:
+        h = handover_to_person_impl(reason=r, target_queue=q, state={"account_id": "A1001"})
+        assert h["status"] == "ok"
+
