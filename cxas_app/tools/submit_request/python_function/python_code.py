@@ -13,6 +13,8 @@ def submit_request(
     postal_code: str = "",
     service_type: str = "",
     is_safety_hazard: bool = False,
+    destination_phone: str | int = "",
+    days: int | float | str = 0,
 ) -> dict[str, Any]:
     """Records the caller's request on their account and returns a reference number.
 
@@ -29,7 +31,9 @@ def submit_request(
       slot: Requested appointment schedule window.
       postal_code: Area postal code for outage checks.
       service_type: Type of service (e.g. mobility, internet, tv).
-      is_safety_hazard: True if hardware issue involves battery swelling or thermal danger.
+      is_safety_hazard: True if hardware issue involves battery thermal danger or safety hazard.
+      destination_phone: Optional alternate phone number or digits if caller specifies an alternate delivery number.
+      days: Optional duration in days for SLA downtime credit calculation.
 
     Returns:
       dict: status, data (submitted), error_message and tracking_id, which is
@@ -51,6 +55,8 @@ def submit_request(
         postal_code=postal_code,
         service_type=service_type,
         is_safety_hazard=is_safety_hazard,
+        destination_phone=destination_phone,
+        days=days,
         state=state,
     )
 
@@ -96,6 +102,8 @@ AVAILABLE_SLOTS: list[dict[str, str]] = [  # pragma: no cover
     {"slot_id": "SLOT-2", "display": "Tomorrow 13:00 - 17:00", "window": "13:00 - 17:00", "date": relative_date(1)},
     {"slot_id": "SLOT-3", "display": "In two days 09:00 - 13:00", "window": "09:00 - 13:00", "date": relative_date(2)},
 ]
+
+DECLINED_CARD_LAST4: frozenset[str] = frozenset({"0000", "9999"})  # pragma: no cover
 
 class _StatusStr(str):  # pragma: no cover
     """String status value that compares equal case-insensitively ('ok' == 'OK')."""
@@ -214,7 +222,10 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {  # pragma: no cover
             "monthly_rate": 50.0,
             "rate_display": "50.00",
             "speed_mbps": 100,
+            "download_mbps": 100,
+            "upload_mbps": 100,
             "unlimited_data": True,
+            "data_cap": "Unlimited",
             "activation_fee": 0.0,
             "activation_fee_display": "0.00",
         },
@@ -224,7 +235,10 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {  # pragma: no cover
             "monthly_rate": 70.0,
             "rate_display": "70.00",
             "speed_mbps": 500,
+            "download_mbps": 500,
+            "upload_mbps": 500,
             "unlimited_data": True,
+            "data_cap": "Unlimited",
             "activation_fee": 0.0,
             "activation_fee_display": "0.00",
         },
@@ -234,7 +248,10 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {  # pragma: no cover
             "monthly_rate": 90.0,
             "rate_display": "90.00",
             "speed_mbps": 1000,
+            "download_mbps": 1000,
+            "upload_mbps": 750,
             "unlimited_data": True,
+            "data_cap": "Unlimited",
             "activation_fee": 0.0,
             "activation_fee_display": "0.00",
         },
@@ -781,7 +798,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             rec = dict(record)
             rec[k_last4] = rec["phone"][-4:]
             rec[k_caller] = (
-                digits[-4:] if (not has_alpha and len(digits) in (9, 10)) else ""
+                digits[-4:] if (not has_alpha and 7 <= len(digits) <= 10) else ""
             )
             return rec
     if norm["kind"] in ("phone", "international_phone"):
@@ -822,7 +839,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [],
         }
-    if not has_alpha and len(digits) in (9, 10):
+    if not has_alpha and (7 <= len(digits) <= 10):
         return {
             "account_id": "A" + digits[-6:],
             "phone": digits,
@@ -891,7 +908,9 @@ def ok_reply(  # pragma: no cover
             reply[key] = payload[key]
     return reply
 
-DECLINED_CARD_LAST4: frozenset[str] = frozenset({"0000", "9999"})  # pragma: no cover
+def only_digits(text: Any) -> str:  # pragma: no cover
+    """Keep the digits of what the caller said ("(202) 555-0143" -> "2025550186")."""
+    return normalize_code(text)
 
 MAX_PAYMENT_ATTEMPTS = 3  # pragma: no cover
 
@@ -962,9 +981,18 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
         "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
     },
     "transfer_to_specialist": {
-        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
-        "fr-CA": "Je vous transfère à un spécialiste de la facturation dès maintenant — il aura accès à tout ce dont nous avons déjà discuté.",
-        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
+        "en-US": (
+            "This request exceeds the self-service limit and requires specialist approval. "
+            "I'll connect you to a billing specialist now — they'll have everything we've already discussed."
+        ),
+        "fr-CA": (
+            "Cette demande dépasse la limite libre-service et nécessite l'approbation d'un spécialiste. "
+            "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation."
+        ),
+        "es-US": (
+            "Esta solicitud supera el límite de autoservicio y requiere la aprobación de un especialista. "
+            "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido."
+        ),
     },
     "auth_failure_handoff": {
         "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",
@@ -1110,7 +1138,6 @@ def record_payment_attempt(  # pragma: no cover
             "attempts_left": remaining,
             "lockout_triggered": False,
             "spoken_summary": status_desc,
-            "spoken_message": decline_summary,
         },
     )
 
@@ -1138,6 +1165,8 @@ def submit_request_impl(  # pragma: no cover
     postal_code: str = "",
     service_type: str = "",
     is_safety_hazard: bool = False,
+    destination_phone: str | int = "",
+    days: int | float | str = 0,
     state: dict[str, Any] | None = None,
     session_state: dict[str, Any] | None = None,
     **kwargs: Any,
@@ -1167,8 +1196,34 @@ def submit_request_impl(  # pragma: no cover
             language=lang,
         )
 
+    alt_phone = destination_phone or kwargs.get("destination_phone")
+    if alt_phone:
+        raw_p = str(alt_phone).strip()
+        p_digits = only_digits(raw_p)
+        if len(p_digits) >= 4:
+            state["caller_provided_phone"] = p_digits
+            state["caller_provided_phone_last4"] = p_digits[-4:]
+            state["phone_last4"] = p_digits[-4:]
+
     # 1. Outage Check (M4) — Information inquiry, does not require login
     if (clean_action == "outage_check" or any(k in low for k in ("outage", "panne", "service alert", "panne de service")) or (postal_code and len(postal_code) >= 3)) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
+        if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular", "cell phone", "données mobiles")):
+            return ok_reply(
+                {
+                    "outage_active": False,
+                    "service": "mobile",
+                    "details": "Aucune panne de réseau mobile signalée dans ce secteur." if lang.startswith("fr") else "No mobile network outages reported in this coverage sector.",
+                    "steps": [
+                        "Redémarrer l'appareil" if lang.startswith("fr") else "Restart mobile device",
+                        "Activer puis désactiver le mode avion" if lang.startswith("fr") else "Toggle airplane mode for 10 seconds",
+                        "Vérifier les paramètres réseau cellulaire" if lang.startswith("fr") else "Verify cellular network settings",
+                    ],
+                    "sms_guide_available": True,
+                },
+                reference,
+                language=lang,
+                spoken_summary="Vérification réseau mobile terminée." if lang.startswith("fr") else "Mobile network check completed.",
+            )
         pc = str(postal_code or "").strip()
         if not pc:
             pc_match = re.search(r"\b([A-Za-z]\d[A-Za-z](?:\s*\d[A-Za-z]\d)?)\b", clean_summary)
@@ -1176,14 +1231,23 @@ def submit_request_impl(  # pragma: no cover
                 pc = pc_match.group(1)
         region = resolve_postal_code_region(pc) if pc else str(state.get("region") or "Region-A")
         outage = OUTAGE_REGIONS.get(region, OUTAGE_REGIONS["Region-A"])
+        outage_is_active = bool(outage["active"])
+        res_data: dict[str, Any] = {
+            "outage_active": outage_is_active,
+            "region": region,
+            "restoration_eta_iso": outage["restoration_eta_iso"],
+            "affected_services": list(outage["affected_services"]),
+            "cause": outage["cause"],
+        }
+        if not outage_is_active:
+            res_data["sms_guide_available"] = True
+            res_data["steps"] = [
+                "Débrancher le modem 30 secondes" if lang.startswith("fr") else "Power cycle gateway for 30 seconds",
+                "Vérifier le voyant d'alimentation" if lang.startswith("fr") else "Verify front panel LED lights",
+                "Tester la connexion Wi-Fi" if lang.startswith("fr") else "Verify Wi-Fi connection",
+            ]
         return ok_reply(
-            {
-                "outage_active": bool(outage["active"]),
-                "region": region,
-                "restoration_eta_iso": outage["restoration_eta_iso"],
-                "affected_services": list(outage["affected_services"]),
-                "cause": outage["cause"],
-            },
+            res_data,
             reference,
             language=lang,
             spoken_summary="État de la panne récupéré." if lang.startswith("fr") else "Outage status retrieved.",
@@ -1194,7 +1258,13 @@ def submit_request_impl(  # pragma: no cover
         p_target = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
         p_last4 = p_target[-4:]
         return ok_reply(
-            {"sms_sent": True, "valid_minutes": 30, "phone_last4": p_last4},
+            {
+                "sms_sent": True,
+                "valid_minutes": 30,
+                "phone_last4": p_last4,
+                "destination_phone_last4": p_last4,
+                "destination_last4": p_last4,
+            },
             reference,
             language=lang,
             spoken_summary="SMS de réinitialisation envoyé." if lang.startswith("fr") else "Password reset SMS dispatched.",
@@ -1205,13 +1275,16 @@ def submit_request_impl(  # pragma: no cover
         tid_match = re.search(r"\b(T\d{5})\b", clean_summary.upper())
         tid = tid_match.group(1) if tid_match else "T88219"
         ticket = TICKETS.get(tid, TICKETS["T88219"])
+        desc = "Restauration du câble à fibre optique en cours" if lang.startswith("fr") else ticket["description"]
+        eta = "D'ici 24 heures" if lang.startswith("fr") else ticket["eta"]
+        status_lbl = "ouvert" if lang.startswith("fr") and ticket["status"] == "open" else ticket["status"]
         return ok_reply(
             {
                 "ticket_id": ticket["ticket_id"],
-                "status": ticket["status"],
-                "eta": ticket["eta"],
+                "status": status_lbl,
+                "eta": eta,
                 "service_type": ticket["service_type"],
-                "description": ticket["description"],
+                "description": desc,
             },
             reference,
             language=lang,
@@ -1222,6 +1295,10 @@ def submit_request_impl(  # pragma: no cover
     if (clean_action == "check_appointment" or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
         acc_id = str(state.get("account_id") or "A1001")
         appt = APPOINTMENTS.get(acc_id, APPOINTMENTS["A1001"])
+        if lang.startswith("fr"):
+            slots_list = ["Demain 08h00 - 12h00", "Demain 13h00 - 17h00", "Après-demain 09h00 - 13h00"]
+        else:
+            slots_list = [s["display"] for s in AVAILABLE_SLOTS]
         return ok_reply(
             {
                 "appt_id": appt["appt_id"],
@@ -1230,7 +1307,7 @@ def submit_request_impl(  # pragma: no cover
                 "delay_minutes": appt["delay_minutes"],
                 "window": appt["window"],
                 "date": appt["date"],
-                "available_slots": [s["display"] for s in AVAILABLE_SLOTS],
+                "available_slots": slots_list,
             },
             reference,
             language=lang,
@@ -1245,14 +1322,14 @@ def submit_request_impl(  # pragma: no cover
 
     is_unauthenticated_allowed = (
         clean_action in ("search_plans", "troubleshoot_tv")
-        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "fibe tv", "tv app", "satellite")))
+        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "streaming", "tv app", "satellite")))
     )
 
     if state.get("auth_status") != "pass" and not is_unauthenticated_allowed:
         return error_reply(
             "NOT_LOGGED_IN",
-            "The caller has not passed login.",
-            "Log the caller in with send_login_code and check_login_code, then call submit_request again.",
+            "L'appelant n'a pas complété l'authentification." if lang.startswith("fr") else "The caller has not passed login.",
+            "Authentifier l'appelant avec send_login_code puis check_login_code avant de continuer." if lang.startswith("fr") else "Log the caller in with send_login_code and check_login_code, then call submit_request again.",
             reference,
             language=lang,
         )
@@ -1264,8 +1341,60 @@ def submit_request_impl(  # pragma: no cover
     state["request_summary"] = clean_summary
     state["last_tracking_id"] = reference
 
+    # 4b. Bill Inquiry / Balance Check
+    if clean_action in ("bill_inquiry", "recent_bills", "billing_breakdown") or (
+        not clean_action and any(k in low for k in ("bill inquiry", "check balance", "current balance", "solde actuel", "consulter facture", "état du compte", "etat du compte"))
+    ):
+        acc_id = str(state.get("account_id") or "")
+        account = find_account(acc_id) if acc_id else None
+        past_bal = float(state.get("past_due_balance") or (account.get("past_due_balance", 85.50) if account else 85.50))
+        cur_bal = float(state.get("current_balance") or (account.get("current_balance", 85.50) if account else 85.50))
+        return ok_reply(
+            {
+                "current_balance": cur_bal,
+                "current_balance_display": display_amount(cur_bal),
+                "past_due_balance": past_bal,
+                "past_due_balance_display": display_amount(past_bal),
+                "due_date": relative_date(14),
+                "last_payment_amount": 85.50,
+                "last_payment_amount_display": "85.50",
+                "last_payment_date": relative_date(-30),
+            },
+            reference,
+            language=lang,
+            spoken_summary="Solde récupéré." if lang.startswith("fr") else "Billing balance retrieved.",
+        )
+
+    # 4c. General Troubleshooting / Wi-Fi Diagnostic Guide
+    if clean_action == "troubleshoot" and clean_service in ("internet", "wifi", "wi-fi", "home_phone", "mobile", ""):
+        phone_to_text = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
+        if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular")):
+            steps = [
+                "Redémarrer l'appareil" if lang.startswith("fr") else "Restart mobile device",
+                "Activer puis désactiver le mode avion" if lang.startswith("fr") else "Toggle airplane mode for 10 seconds",
+                "Vérifier les paramètres réseau cellulaire" if lang.startswith("fr") else "Verify cellular network settings",
+            ]
+        else:
+            steps = [
+                "Débrancher l'alimentation de la passerelle 30 secondes" if lang.startswith("fr") else "Power cycle gateway for 30 seconds",
+                "Vérifier le voyant blanc fixe sur le panneau avant" if lang.startswith("fr") else "Verify solid white LED on front panel",
+                "Vérifier les câbles réseau" if lang.startswith("fr") else "Check ethernet and coaxial cables",
+            ]
+        return ok_reply(
+            {
+                "troubleshooting_complete": True,
+                "steps": steps,
+                "diagnostic_sms_sent": True,
+                "sms_guide_available": True,
+                "sms_guide_url": "https://telco.example.com/troubleshoot-guide",
+                "phone_last4": phone_to_text[-4:],
+            },
+            reference,
+            language=lang,
+            spoken_summary="Dépannage complété." if lang.startswith("fr") else "Troubleshooting guide provided.",
+        )
+
     # 5. Cancellation (Service, Line, Phone, or Appointment)
-    # Ordered BEFORE plan/speed upgrade checks so French "annuler téléphonie... haute vitesse" cancels phone!
     if clean_action == "cancel" or any(k in low for k in ("cancel", "annuler", "résilier", "resilier", "port out")):
         if any(k in low for k in ("appointment", "technician", "rendez-vous", "technicien")) or clean_service in ("appointment", "technician"):
             acc_id = str(state.get("account_id") or "A1001")
@@ -1355,9 +1484,12 @@ def submit_request_impl(  # pragma: no cover
         d1 = relative_date(14)
         d2 = relative_date(28)
         state["payment_verified"] = True
+        state["service_restored"] = True
+        state["status"] = "active"
         return ok_reply(
             {
                 "arrangement_confirmed": True,
+                "service_restored": True,
                 "total_amount": cur_bal,
                 "total_amount_display": display_amount(cur_bal),
                 "installments": 2,
@@ -1365,11 +1497,7 @@ def submit_request_impl(  # pragma: no cover
                 "installment_amount_display": display_amount(inst_amt),
                 "due_date_1": d1,
                 "due_date_2": d2,
-                "message": (
-                    f"Entente de paiement confirmée : 2 versements de {display_amount(inst_amt)} $ le {d1} et le {d2}."
-                    if lang.startswith("fr")
-                    else f"Payment arrangement confirmed: 2 installments of ${display_amount(inst_amt)} due {d1} and {d2}."
-                ),
+                "message": "Entente de paiement confirmée." if lang.startswith("fr") else "Payment arrangement confirmed.",
             },
             reference,
             language=lang,
@@ -1458,15 +1586,78 @@ def submit_request_impl(  # pragma: no cover
             spoken_summary="Paiement traité avec succès." if lang.startswith("fr") else "Payment processed successfully.",
         )
 
+    # 7b. Strict Warranty Precedence before Dispute
+    if clean_action == "warranty" or is_safety_hazard or (
+        not clean_action and any(k in low for k in ("warranty", "garantie", "defect", "defective", "remplacement appareil", "hardware", "thermal", "overheating", "surchauffe"))
+    ):
+        is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
+        ref_id = "WAR-" + tracking_id("warranty", clean_summary)
+        if any(k in low for k in ("crack", "fissur", "liquid", "water", "eau", "drop", "chute")):
+            return error_reply(
+                "PHYSICAL_DAMAGE_EXCLUDED",
+                message="Les dommages physiques ou liquides sont exclus de la couverture de garantie." if lang.startswith("fr") else "Physical or liquid damage is excluded from warranty coverage.",
+                agent_action="Informer l'appelant que les dommages physiques ne sont pas couverts." if lang.startswith("fr") else "Inform caller that physical/liquid damage is not covered by standard warranty.",
+                reference=reference,
+                language=lang,
+                data={"claim_status": "rejected_physical_damage", "covered": False},
+            )
+        delivery = "3 à 5 jours ouvrables" if lang.startswith("fr") else "3 to 5 business days"
+        if is_hazard:
+            return ok_reply(
+                {
+                    "warranty_submitted": True,
+                    "claim_id": ref_id,
+                    "tracking_id": ref_id,
+                    "warranty_reference": ref_id,
+                    "claim_status": "approved_urgent",
+                    "hazard_warning": True,
+                    "safety_instructions": "Cessez immédiatement d'utiliser et de charger l'appareil." if lang.startswith("fr") else "Stop using and charging the device immediately. Keep in a fire-safe area.",
+                    "replacement_shipped": True,
+                    "delivery_window": "1 jour ouvrable" if lang.startswith("fr") else "1 business day",
+                    "eta_business_days": 1,
+                    "days": 1,
+                },
+                reference,
+                language=lang,
+                spoken_summary="Remplacement sous garantie commandé." if lang.startswith("fr") else "Warranty replacement ordered.",
+            )
+        return ok_reply(
+            {
+                "warranty_submitted": True,
+                "claim_id": ref_id,
+                "tracking_id": ref_id,
+                "warranty_reference": ref_id,
+                "claim_status": "approved_standard",
+                "hazard_warning": False,
+                "replacement_shipped": True,
+                "delivery_window": delivery,
+                "eta_business_days": 3,
+                "days": "3 to 5",
+            },
+            reference,
+            language=lang,
+            spoken_summary="Demande de garantie évaluée." if lang.startswith("fr") else "Warranty claim assessed.",
+        )
+
     # 8. Outage SLA Credit & Billing Disputes (<= $25 Auto-Adjustment)
     if clean_action in ("outage_credit", "sla_credit") or (
         clean_action == "dispute" and any(k in low for k in ("outage", "panne", "downtime", "sla", "interruption"))
     ) or any(k in low for k in ("sla credit", "downtime credit", "crédit de panne", "crédit pour panne")):
-        days = 2
-        daily_rate = round(85.50 / 30.0, 2)
-        calc_credit = round(daily_rate * days, 2)
+        d_val = 0
+        if days:
+            try:
+                d_val = int(float(days))
+            except (ValueError, TypeError):
+                d_val = 0
+        if d_val <= 0:
+            d_match = re.search(r"\b(\d+)\s*(?:day|jour)", low)
+            d_val = int(d_match.group(1)) if d_match else 2
+        daily_rate = round(85.50 / 30.0, 2)  # 2.85
+        calc_credit = round(2.85 * d_val, 2)
         try:
             parsed_amt = float(amount) if amount else 0.0
+            if not math.isfinite(parsed_amt):
+                parsed_amt = 0.0
         except (ValueError, TypeError):
             parsed_amt = 0.0
         cred_amt = round(parsed_amt, 2) if parsed_amt > 0.0 else calc_credit
@@ -1476,23 +1667,24 @@ def submit_request_impl(  # pragma: no cover
                 "credit_approved": True,
                 "amount": cred_amt,
                 "amount_display": display_amount(cred_amt),
-                "days": days,
+                "days": d_val,
+                "days_credited": d_val,
                 "adjustment_type": "outage_sla_credit",
-                "message": (
-                    f"Crédit d'interruption de service de {display_amount(cred_amt)} $ appliqué à votre compte."
-                    if lang.startswith("fr")
-                    else f"Outage downtime credit of ${display_amount(cred_amt)} applied to your account."
-                ),
+                "message": "Crédit d'interruption appliqué." if lang.startswith("fr") else "Outage credit applied.",
             },
             reference,
             language=lang,
             spoken_summary="Crédit de panne appliqué." if lang.startswith("fr") else "Outage credit applied.",
         )
 
-    if clean_action == "dispute" or any(k in low for k in ("dispute", "credit", "crédit", "refund", "remboursement", "conteste", "charge", "overcharge", "streaming", "downtime")):
+    if clean_action == "dispute" or (
+        not clean_action and any(k in low for k in ("dispute", "credit", "crédit", "refund", "remboursement", "conteste", "overcharge", "facturation", "frais incorrect"))
+    ):
         try:
             dispute_amt = float(amount) if amount else 0.0
         except (ValueError, TypeError):
+            dispute_amt = 0.0
+        if not math.isfinite(dispute_amt):
             dispute_amt = 0.0
         if dispute_amt <= 0.0:
             amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
@@ -1509,19 +1701,15 @@ def submit_request_impl(  # pragma: no cover
                 language=lang,
                 data={"amount": dispute_amt, "threshold": 25.0, "requires_specialist": True},
             )
-        days = 3
+        refund_days = 3
         return ok_reply(
             {
                 "refund_approved": True,
                 "amount": dispute_amt,
                 "amount_display": display_amount(dispute_amt),
-                "days": days,
+                "days": refund_days,
                 "adjustment_type": "courtesy_credit",
-                "message": (
-                    f"Votre remboursement de {display_amount(dispute_amt)} $ apparaîtra sur votre prochain relevé dans un délai de {days} jours ouvrables."
-                    if lang.startswith("fr")
-                    else f"Your refund of ${display_amount(dispute_amt)} will appear on your next statement within {days} business days."
-                ),
+                "message": "Ajustement de contestation traité." if lang.startswith("fr") else "Dispute adjustment processed.",
             },
             reference,
             language=lang,
@@ -1583,8 +1771,18 @@ def submit_request_impl(  # pragma: no cover
 
     # 12. Autopay Setup
     if clean_action == "enroll_autopay" or any(k in low for k in ("autopay", "automatic payment", "paiement automatique", "prélèvement automatique")):
+        c_digits = normalize_code(card_last4)
+        if not c_digits:
+            c_match = re.search(r"\b(\d{4})\b", clean_summary)
+            if c_match:
+                c_digits = c_match.group(1)
+        if not c_digits:
+            c_digits = str(state.get("card_last4") or "7742")
+        if c_digits in DECLINED_CARD_LAST4:
+            attempt_res = record_payment_attempt(state, c_digits, language=lang)
+            return attempt_res
         state["autopay_enrolled"] = True
-        c_digits = normalize_code(card_last4) or str(state.get("card_last4") or "7742")
+        state["card_last4"] = c_digits[-4:]
         return ok_reply(
             {"autopay_enrolled": True, "card_last4": c_digits[-4:]},
             reference,
@@ -1594,7 +1792,7 @@ def submit_request_impl(  # pragma: no cover
 
     # 12b. TV Troubleshooting & Virtual Repair (M4) — uncoupled from broadband outage
     if clean_action in ("troubleshoot_tv", "tv_repair", "virtual_repair") or (
-        any(k in low for k in ("satellite", "receiver", "récepteur", "recepteur", "fibe tv", "tv app", "error 101", "erreur 101"))
+        any(k in low for k in ("satellite", "receiver", "récepteur", "recepteur", "tv app", "streaming", "tv error", "erreur télé", "erreur tv"))
         or (any(k in low for k in ("tv", "télé", "tele")) and any(k in low for k in ("signal", "freeze", "gelé", "gele", "black screen", "écran noir", "ecran noir", "troubleshoot", "dépanner", "depanner")))
     ):
         phone_to_text = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
@@ -1605,11 +1803,7 @@ def submit_request_impl(  # pragma: no cover
                 "sms_guide_dispatched": True,
                 "guide_link": "https://telco.example.com/tv-guide",
                 "phone_last4": phone_to_text[-4:],
-                "message": (
-                    "Procédure de réparation virtuelle démarrée et lien de dépannage envoyé par texto."
-                    if lang.startswith("fr")
-                    else "Virtual repair initiated and troubleshooting guide link dispatched via SMS."
-                ),
+                "message": "Dépannage virtuel complété." if lang.startswith("fr") else "Virtual repair initiated.",
             },
             reference,
             language=lang,
@@ -1626,55 +1820,11 @@ def submit_request_impl(  # pragma: no cover
                 "tracking_id": port_ref,
                 "status": "pending_carrier_release",
                 "estimated_hours": 2,
-                "message": (
-                    f"Demande de transfert de numéro soumise avec succès sous la référence {port_ref}."
-                    if lang.startswith("fr")
-                    else f"Number port-in request submitted successfully under reference {port_ref}."
-                ),
+                "message": "Demande de transfert soumise." if lang.startswith("fr") else "Port-in request submitted.",
             },
             reference,
             language=lang,
             spoken_summary="Transfert de numéro soumis." if lang.startswith("fr") else "Port-in request submitted.",
-        )
-
-    # 13. Warranty Claim & Safety Hazard Handling (PRD §12 & Table 7.1)
-    if clean_action == "warranty" or is_safety_hazard or any(k in low for k in ("warranty", "garantie", "defect", "defective", "remplacement appareil", "battery", "batterie", "thermal", "overheating", "surchauffe", "hardware")):
-        is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
-        ref_id = "WAR-" + tracking_id("warranty", clean_summary)
-        if any(k in low for k in ("crack", "fissur", "liquid", "water", "eau", "drop", "chute")):
-            return error_reply(
-                "PHYSICAL_DAMAGE_EXCLUDED",
-                message="Physical or liquid damage is excluded from warranty coverage.",
-                agent_action="Inform caller that physical/liquid damage is not covered by standard warranty.",
-                reference=reference,
-                language=lang,
-                data={"claim_status": "rejected_physical_damage", "covered": False},
-            )
-        if is_hazard:
-            return ok_reply(
-                {
-                    "claim_id": ref_id,
-                    "claim_status": "approved_urgent",
-                    "hazard_warning": True,
-                    "safety_instructions": "Stop using and charging the device immediately. Keep in a fire-safe area.",
-                    "replacement_shipped": True,
-                    "eta_business_days": 1,
-                },
-                reference,
-                language=lang,
-                spoken_summary="Remplacement sous garantie commandé." if lang.startswith("fr") else "Warranty replacement ordered.",
-            )
-        return ok_reply(
-            {
-                "claim_id": ref_id,
-                "claim_status": "approved_standard",
-                "hazard_warning": False,
-                "replacement_shipped": True,
-                "eta_business_days": 3,
-            },
-            reference,
-            language=lang,
-            spoken_summary="Demande de garantie évaluée." if lang.startswith("fr") else "Warranty claim assessed.",
         )
 
     # 14. Plan Catalog, Upgrades & TV Packages
@@ -1703,6 +1853,10 @@ def submit_request_impl(  # pragma: no cover
                     "monthly_rate": plan["monthly_rate"],
                     "rate_display": plan["rate_display"],
                     "speed_mbps": plan["speed_mbps"],
+                    "download_mbps": plan.get("download_mbps", 1000),
+                    "upload_mbps": plan.get("upload_mbps", 750),
+                    "unlimited_data": True,
+                    "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
                 },

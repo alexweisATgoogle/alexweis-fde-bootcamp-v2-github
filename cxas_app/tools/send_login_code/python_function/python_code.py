@@ -2,15 +2,19 @@ from typing import Any
 
 
 
-def send_login_code(language: str = "") -> dict[str, Any]:
+def send_login_code(
+    language: str = "",
+    destination_phone: str | int = "",
+) -> dict[str, Any]:
     """Sends a login code to the phone number on the caller's account.
 
     Call this when a task tool returned error NOT_LOGGED_IN. It reads the
-    account from the session, so it takes no arguments, and it never returns
-    the code.
+    account from the session, or sends to destination_phone if specified.
+    Never returns the code.
 
     Args:
       language: BCP-47 language code (e.g. en-US, fr-CA, es-US).
+      destination_phone: Optional alternate phone number or digits if caller specifies an alternate delivery number.
 
     Returns:
       dict: status, data (sent, already_verified, destination_last4),
@@ -21,8 +25,9 @@ def send_login_code(language: str = "") -> dict[str, Any]:
     if state is None and isinstance(ctx, dict):
         state = ctx
     return send_login_code_impl(
-        state=state,
         language=language,
+        destination_phone=destination_phone,
+        state=state,
     )
 
 
@@ -540,9 +545,13 @@ def send_login_code_impl(  # pragma: no cover
     state: dict[str, Any] | None = None,
     session_state: dict[str, Any] | None = None,
     language: str = "",
+    destination_phone: str | int = "",
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Send a login code to the phone number on the account. Never returns the code."""
+    if isinstance(state, str) and not language:
+        language = state
+        state = None
     state = _get_state(state, session_state)
     _ensure_default_profile(state)
     lang = _session_language(state, language)
@@ -563,12 +572,14 @@ def send_login_code_impl(  # pragma: no cover
     if state.get("auth_status") == "locked" or failures >= MAX_LOGIN_ATTEMPTS:
         state["auth_status"] = "locked"
         return locked_reply(reference, failures)
-    phone_or_account = kwargs.get("phone_or_account")
-    if phone_or_account:
-        raw_p = str(phone_or_account).strip()
+    alt_phone = destination_phone or kwargs.get("destination_phone") or kwargs.get("phone_or_account")
+    if alt_phone:
+        raw_p = str(alt_phone).strip()
         p_digits = only_digits(raw_p)
         if len(p_digits) >= 4:
+            state["caller_provided_phone"] = p_digits
             state["caller_provided_phone_last4"] = p_digits[-4:]
+            state["phone_last4"] = p_digits[-4:]
     state["auth_status"] = "code_sent"
     state["login_code_sent"] = True
     dest_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")

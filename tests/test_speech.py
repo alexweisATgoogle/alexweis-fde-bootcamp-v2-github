@@ -43,3 +43,17 @@ def test_clean_speech_and_caller_last4_preference() -> None:
     step_line = "I'm transferring you to a billing specialist now."
     assert enforce_handover_utterance(step_line, handover_state) == step_line
     assert enforce_handover_utterance("", {"handover_complete": False, "handoff_message": msg}) == ""
+
+
+def test_resolve_handover_fallback() -> None:
+    from lib.speech import resolve_handover_fallback
+
+    assert "business account" in resolve_handover_fallback("business_handoff", "en-US")
+    assert "compte d'affaires" in resolve_handover_fallback("business_handoff", "fr-CA")
+    assert "facing challenges" in resolve_handover_fallback("fraud_escalation", "en-US")
+    assert "éprouvez des difficultés" in resolve_handover_fallback("fraud_escalation", "fr-CA")
+    assert "connect you to a representative" in resolve_handover_fallback("default", "en-US")
+    assert "transfère à un représentant" in resolve_handover_fallback("default", "fr-CA")
+    assert "specialist" in resolve_handover_fallback("transfer_to_specialist", "en-US")
+    assert "sécurité" in resolve_handover_fallback("auth_failure", "fr-CA")
+

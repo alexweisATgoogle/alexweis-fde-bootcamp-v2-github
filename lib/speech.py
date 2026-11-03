@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 import re
 from typing import Any
 
+from lib.fakes import spoken_line
+
 # Numbers the PRD wants said in full, such as a support line. Every other
 # number with 9 or more digits is cut to its last 4 digits.
 SPEAKABLE_NUMBERS: frozenset[str] = frozenset()
@@ -94,3 +96,24 @@ def enforce_handover_utterance(
         return text
     handoff_msg = str(session_params.get("handoff_message") or "").strip()
     return handoff_msg or text
+
+
+def resolve_handover_fallback(
+    reason: str = "",
+    language: str = "",
+    session_params: dict[str, Any] | None = None,
+) -> str:
+    """Return localized spoken transfer sentence for an empty handover turn."""
+    state_dict = session_params if isinstance(session_params, dict) else {}
+    lang = language or str(state_dict.get("language") or "en-US")
+    clean_r = str(reason or state_dict.get("handoff_reason") or "").strip().lower()
+    if clean_r in ("business_handoff", "business", "business_account"):
+        return spoken_line("business_handoff", lang)
+    if clean_r in ("fraud_escalation", "fraud"):
+        return spoken_line("empathy_protocol", lang)
+    if clean_r in ("refund_threshold_exceeded", "transfer_to_specialist"):
+        return spoken_line("transfer_to_specialist", lang)
+    if clean_r in ("auth_failure_handoff", "auth_failure"):
+        return spoken_line("auth_failure_handoff", lang)
+    return spoken_line("live_agent_handoff", lang)
+

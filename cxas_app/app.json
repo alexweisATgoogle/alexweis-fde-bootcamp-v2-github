@@ -72,6 +72,24 @@
       }
     },
     {
+      "name": "caller_provided_phone",
+      "description": "Full digits of the phone number the caller actually gave on this call.",
+      "schema": {
+        "type": "STRING",
+        "default": "",
+        "required": []
+      }
+    },
+    {
+      "name": "current_balance",
+      "description": "Current total balance amount on the identified account.",
+      "schema": {
+        "type": "NUMBER",
+        "default": 85.5,
+        "required": []
+      }
+    },
+    {
       "name": "auth_status",
       "description": "Login progress: none, code_sent, pass or locked. Only check_login_code or check_secret_pin sets pass.",
       "schema": {

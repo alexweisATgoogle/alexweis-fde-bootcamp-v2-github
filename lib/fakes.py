@@ -84,9 +84,18 @@ SPOKEN_LINES: dict[str, dict[str, str]] = {
         "es-US": "Veo que hay una interrupción activa en su área. Estamos trabajando en ello. ¿Desea que le envíe un mensaje de texto cuando se restablezca?",
     },
     "transfer_to_specialist": {
-        "en-US": "I'll connect you to a billing specialist now — they'll have everything we've already discussed.",
-        "fr-CA": "Je vous transfère à un spécialiste de la facturation dès maintenant — il aura accès à tout ce dont nous avons déjà discuté.",
-        "es-US": "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido.",
+        "en-US": (
+            "This request exceeds the self-service limit and requires specialist approval. "
+            "I'll connect you to a billing specialist now — they'll have everything we've already discussed."
+        ),
+        "fr-CA": (
+            "Cette demande dépasse la limite libre-service et nécessite l'approbation d'un spécialiste. "
+            "Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation."
+        ),
+        "es-US": (
+            "Esta solicitud supera el límite de autoservicio y requiere la aprobación de un especialista. "
+            "Lo comunicaré con un especialista en facturación ahora; tendrá todo lo que ya hemos discutido."
+        ),
     },
     "auth_failure_handoff": {
         "en-US": "I was unable to verify your identity. For your security, I will transfer you to a customer service representative who can assist you further.",
@@ -306,7 +315,10 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {
             "monthly_rate": 50.0,
             "rate_display": "50.00",
             "speed_mbps": 100,
+            "download_mbps": 100,
+            "upload_mbps": 100,
             "unlimited_data": True,
+            "data_cap": "Unlimited",
             "activation_fee": 0.0,
             "activation_fee_display": "0.00",
         },
@@ -316,7 +328,10 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {
             "monthly_rate": 70.0,
             "rate_display": "70.00",
             "speed_mbps": 500,
+            "download_mbps": 500,
+            "upload_mbps": 500,
             "unlimited_data": True,
+            "data_cap": "Unlimited",
             "activation_fee": 0.0,
             "activation_fee_display": "0.00",
         },
@@ -326,7 +341,10 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {
             "monthly_rate": 90.0,
             "rate_display": "90.00",
             "speed_mbps": 1000,
+            "download_mbps": 1000,
+            "upload_mbps": 750,
             "unlimited_data": True,
+            "data_cap": "Unlimited",
             "activation_fee": 0.0,
             "activation_fee_display": "0.00",
         },
@@ -584,7 +602,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             rec = dict(record)
             rec[k_last4] = rec["phone"][-4:]
             rec[k_caller] = (
-                digits[-4:] if (not has_alpha and len(digits) in (9, 10)) else ""
+                digits[-4:] if (not has_alpha and 7 <= len(digits) <= 10) else ""
             )
             return rec
     if norm["kind"] in ("phone", "international_phone"):
@@ -625,7 +643,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             "early_cancellation_fee": 150.00,
             "payment_ledger": [],
         }
-    if not has_alpha and len(digits) in (9, 10):
+    if not has_alpha and (7 <= len(digits) <= 10):
         return {
             "account_id": "A" + digits[-6:],
             "phone": digits,
@@ -665,7 +683,8 @@ def login_code_accepted(code_digits: Any, attempts: int = 0, max_attempts: int =
     """Whether the fake login service accepts a code on this try (the login ladder).
 
     `attempts` is the number of wrong tries so far on this call:
-      - first and second tries (attempts < 2): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
+      - first try (attempts == 0): any 4- to 10-digit code except ALWAYS_WRONG_LOGIN_CODES;
+      - second try (attempts == 1): only known codes in VALID_LOGIN_CODES;
       - the last try (attempts >= max_attempts - 1): always wrong, so the caller
         is locked out and lockout tests behave the same every time.
     """

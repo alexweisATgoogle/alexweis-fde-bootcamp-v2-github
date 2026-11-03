@@ -352,8 +352,8 @@ def test_telco_domain_actions_and_edge_cases() -> None:
 def test_find_account_normalizations() -> None:
     from lib.fakes import find_account
 
-    acc11 = find_account("+1 (514) 555-0199")
-    assert acc11 is not None and acc11["phone"] == "5145550199"
+    acc11 = find_account("+1 (202) 555-0164")
+    assert acc11 is not None and acc11["phone"] == "2025550164"
 
     acc7 = find_account("555-0198")
     assert acc7 is not None and "5550198" in acc7["phone"]
@@ -408,9 +408,29 @@ def test_payment_arrangement_and_sla_credit() -> None:
 
 def test_tv_troubleshooting_sms_link() -> None:
     st = {"logged_in": True, "account_id": "A1001", "phone": "2025550186"}
-    r_tv = submit_request_impl("Troubleshoot satellite error 101", action="troubleshoot_tv", state=st)
+    r_tv = submit_request_impl("Troubleshoot satellite receiver signal", action="troubleshoot_tv", state=st)
     assert r_tv["status"] == "ok"
     assert r_tv["data"]["virtual_repair_initiated"] is True
     assert r_tv["data"]["sms_guide_dispatched"] is True
+
+
+def test_dispute_nan_amount_guard() -> None:
+    st = {"logged_in": True, "account_id": "A1001"}
+    r = submit_request_impl("Dispute unexpected charge", action="dispute", amount=float("nan"), state=st)
+    assert r["status"] == "ok"
+    assert r["data"]["refund_approved"] is True
+
+
+def test_destination_phone_and_warranty_precedence() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "phone_last4": "0186"}
+    r_code = send_login_code_impl(destination_phone="5550199", state=st)
+    assert r_code["status"] == "ok"
+    assert st["phone_last4"] == "0199"
+
+    st_war = {"logged_in": True, "account_id": "A1001", "phone_last4": "0186"}
+    r_war = submit_request_impl("mon téléphone ne charge plus", action="warranty", state=st_war, language="fr-CA")
+    assert r_war["status"] == "ok"
+    assert r_war["data"]["warranty_submitted"] is True
+    assert "dispute" not in r_war["data"].get("adjustment_type", "")
 
 
