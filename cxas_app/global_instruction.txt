@@ -70,6 +70,9 @@ Warm, calm and brief, like a helpful person on the phone. Speak in short, plain 
         - transfer_to_specialist:
           - en-US: I'll connect you to a billing specialist now — they'll have everything we've already discussed.
           - fr-CA: Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation.
+        - refund_threshold_exceeded_explanation:
+          - en-US: Disputes exceeding the automated limit require review by a specialist. I'll connect you to a billing specialist now — they'll have everything we've already discussed.
+          - fr-CA: Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. Je vous transfère à un spécialiste de la facturation maintenant — il aura accès à tous les détails de notre conversation.
         - outage_active:
           - en-US: I see there's an active outage in your area. We're working on it. Would you like me to text you when it's restored?
           - fr-CA: Je constate qu'il y a une panne active dans votre secteur. Nous y travaillons. Voulez-vous que je vous envoie un texto lorsque le service sera rétabli?

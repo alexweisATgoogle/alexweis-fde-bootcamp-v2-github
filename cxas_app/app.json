@@ -333,6 +333,15 @@
       }
     },
     {
+      "name": "dispute_limit_exceeded",
+      "description": "True when a billing dispute exceeds the automated threshold requiring specialist review.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
       "name": "status",
       "description": "Account status (e.g. active, suspended).",
       "schema": {

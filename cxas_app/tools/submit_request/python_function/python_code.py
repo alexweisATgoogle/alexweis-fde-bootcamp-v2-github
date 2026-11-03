@@ -294,6 +294,14 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {  # pragma: no cover
             "description": "24/7 world and local news channels",
             "channels": ["World News", "Business Report", "Headline Daily"],
         },
+        {
+            "package_id": "TV-SPORTS",
+            "name": "Sports Pack",
+            "monthly_rate": 20.0,
+            "rate_display": "20.00",
+            "description": "Live local and international sports channels",
+            "channels": ["Sports 1-4", "Racing Live", "Golf Central"],
+        },
     ],
 }
 
@@ -736,6 +744,8 @@ def display_amount(value: Any) -> str:  # pragma: no cover
         raise ValueError(f"not an amount: {value!r}")
     return str(amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
+BLOCKED_CALLER_NUMBERS: frozenset[str] = frozenset({"9005550199"})  # pragma: no cover
+
 def normalize_code(value: Any) -> str:  # pragma: no cover
     """Coerce ints, floats (e.g. 5903.0), and formatted strings into a clean digit string."""
     if value is None or isinstance(value, bool):
@@ -786,7 +796,7 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     if ref_match2:
         digits, suffix = ref_match2.groups()
         return {"kind": "reference", "value": f"{digits}-{suffix.upper()}"}
-    if compact.isdigit() and 4 <= len(compact) <= 9:
+    if compact.isdigit() and 4 <= len(compact) <= 12:
         return {"kind": "account", "value": compact}
     return {"kind": "unknown", "value": s}
 
@@ -811,7 +821,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             rec = dict(record)
             rec[k_last4] = rec["phone"][-4:]
             rec[k_caller] = (
-                digits[-4:] if (not has_alpha and 7 <= len(digits) <= 10) else ""
+                digits[-4:] if (not has_alpha and 7 <= len(digits) <= 12) else ""
             )
             return rec
     if norm["kind"] in ("phone", "international_phone"):
@@ -852,10 +862,12 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [],
         }
-    if not has_alpha and (7 <= len(digits) <= 10):
+    if not has_alpha and (7 <= len(digits) <= 12):
+        if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
+            return None
         return {
             "account_id": "A" + digits[-6:],
-            "phone": digits,
+            "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
             k_caller: digits[-4:],
             "first_name": "",
@@ -1186,6 +1198,15 @@ def submit_request_impl(  # pragma: no cover
     account_id = str(state.get("account_id") or "")
     clean_summary = " ".join(str(summary or "").split())
     clean_action = str(action or "").strip().lower()
+    french_action_map = {
+        "desactiver_mfa": "disable_mfa",
+        "désactiver_mfa": "disable_mfa",
+        "activer_mfa": "enable_mfa",
+        "rehausser_forfait": "upgrade",
+        "changer_forfait": "upgrade",
+    }
+    if clean_action in french_action_map:
+        clean_action = french_action_map[clean_action]
     clean_service = str(service_type or "").strip().lower()
     low = clean_summary.lower()
     reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
@@ -1669,7 +1690,12 @@ def submit_request_impl(  # pragma: no cover
     ):
         is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
         ref_id = "WAR-" + tracking_id("warranty", clean_summary)
-        if any(k in low for k in ("crack", "fissur", "liquid", "water", "eau", "drop", "chute")):
+        low_clean_damage = re.sub(
+            r"\b(?:no|not|without|zero|neither|nor|aucun|aucune|pas\s+de|sans)\b[^.!?;,]{0,50}\b(?:damage|damaged|water|liquid|crack\w*|drop\w*|dommage|eau|liquide|fissur\w*|chute)\b",
+            "",
+            low,
+        )
+        if any(k in low_clean_damage for k in ("crack", "fissur", "liquid", "water", "eau", "drop", "chute")):
             return error_reply(
                 "PHYSICAL_DAMAGE_EXCLUDED",
                 message="Les dommages physiques ou liquides sont exclus de la couverture de garantie." if lang.startswith("fr") else "Physical or liquid damage is excluded from warranty coverage.",
@@ -1812,6 +1838,7 @@ def submit_request_impl(  # pragma: no cover
             transfer_msg = spoken_line("transfer_to_specialist", lang)
             state["handoff_message"] = transfer_msg
             state["handoff_reason"] = "refund_threshold_exceeded"
+            state["dispute_limit_exceeded"] = True
             return error_reply(
                 "LIMIT_EXCEEDED",
                 message="Dispute exceeds the $25.00 limit for automated adjustment." if not lang.startswith("fr") else "La contestation dépasse la limite de 25,00 $.",
@@ -1877,18 +1904,18 @@ def submit_request_impl(  # pragma: no cover
         if clean_action == "disable_mfa" or any(k in low for k in ("disable", "turn off", "deactivate", "remove", "désactiver", "desactiver", "supprimer", "enlever")):
             state["mfa_enabled"] = False
             return ok_reply(
-                {"mfa_enabled": False, "status": "disabled"},
+                {"mfa_enabled": False, "status": "désactivé" if lang.startswith("fr") else "disabled"},
                 reference,
                 language=lang,
-                spoken_summary="Paramètre MFA mis à jour." if lang.startswith("fr") else "MFA setting updated.",
+                spoken_summary="MFA désactivé." if lang.startswith("fr") else "MFA disabled.",
             )
         else:
             state["mfa_enabled"] = True
             return ok_reply(
-                {"mfa_enabled": True, "status": "enabled"},
+                {"mfa_enabled": True, "status": "activé" if lang.startswith("fr") else "enabled"},
                 reference,
                 language=lang,
-                spoken_summary="Paramètre MFA mis à jour." if lang.startswith("fr") else "MFA setting updated.",
+                spoken_summary="MFA activé." if lang.startswith("fr") else "MFA enabled.",
             )
 
     # 11. Lost / Stolen Suspension
@@ -1944,7 +1971,9 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 12c. Port-In Number Transfer (M5)
-    if clean_action == "port_in" or any(k in low for k in ("port in", "port", "transfer number", "transférer numéro", "transferer numero")):
+    is_port_in_action = clean_action == "port_in"
+    has_port_kw = bool(re.search(r"\b(?:port\s*in|port|transfer\s+number|transférer\s+numéro|transferer\s+numero)\b", low))
+    if is_port_in_action or (not clean_action and has_port_kw and clean_service != "tv" and "sport" not in low):
         port_ref = "PORT-" + tracking_id("port", clean_summary)
         is_landline = any(k in low for k in ("landline", "ligne fixe", "fixe", "home phone"))
         porting_window = (
@@ -1970,8 +1999,21 @@ def submit_request_impl(  # pragma: no cover
 
     # 14. Plan Catalog, Upgrades & TV Packages
     if clean_action in ("search_plans", "upgrade_plan", "upgrade", "add_package") or any(k in low for k in ("plan", "forfait", "upgrade", "rehausser", "vitesse", "budget", "specialty", "package", "pack", "channel", "chaîne", "chaine", "add-on", "option", "coverage", "couverture")):
-        if any(k in low for k in ("specialty", "package", "pack", "tv", "télé", "tele", "channel", "chaîne", "chaine")) and clean_service != "internet":
-            pkg = PLAN_CATALOG["tv_packages"][0]
+        if (clean_service == "tv" or any(k in low for k in ("specialty", "package", "pack", "tv", "télé", "tele", "channel", "chaîne", "chaine"))) and clean_service != "internet":
+            selected_pkg = PLAN_CATALOG["tv_packages"][0]
+            for candidate in PLAN_CATALOG["tv_packages"]:
+                pkg_kw = candidate["name"].lower()
+                if "sport" in low and "sport" in pkg_kw:
+                    selected_pkg = candidate
+                    break
+                elif "entertain" in low and "entertain" in pkg_kw:
+                    selected_pkg = candidate
+                    break
+                elif "news" in low and "news" in pkg_kw:
+                    selected_pkg = candidate
+                    break
+            pkg = selected_pkg
+            is_tv_order = clean_action in ("upgrade", "upgrade_plan", "add_package") or any(k in low for k in ("order", "commander", "ajouter", "add", "upgrade", "rehausser"))
             return ok_reply(
                 {
                     "package_id": pkg["package_id"],
@@ -1981,10 +2023,11 @@ def submit_request_impl(  # pragma: no cover
                     "channels": pkg["channels"],
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
+                    "status": "added" if is_tv_order else "available",
                 },
                 reference,
                 language=lang,
-                spoken_summary="Détails du forfait récupérés." if lang.startswith("fr") else "Package details retrieved.",
+                spoken_summary=("Forfait télé activé." if is_tv_order else "Forfait télé récupéré.") if lang.startswith("fr") else ("TV package added." if is_tv_order else "TV package retrieved."),
             )
 
         try:
@@ -2020,7 +2063,9 @@ def submit_request_impl(  # pragma: no cover
 
             # Specific tier upgrade execution
             if clean_action in ("upgrade", "upgrade_plan") or any(k in low for k in ("upgrade", "rehausser", "passer à", "changer pour")):
-                if "500" in low or (budget > 0 and 50.0 < budget <= 80.0):
+                if any(k in low for k in ("1.5", "1500", "1 500", "1,5")):
+                    tier = all_internet[3]  # Fiber 1.5 Gbps ($105.00)
+                elif "500" in low or (budget > 0 and 50.0 < budget <= 80.0):
                     tier = all_internet[1]  # Fiber 500 ($70.00)
                 elif "100" in low or (budget > 0 and 0.0 < budget <= 50.0):
                     tier = all_internet[0]  # Fiber 100 ($50.00)
@@ -2086,6 +2131,37 @@ def submit_request_impl(  # pragma: no cover
             )
 
         all_mobility = PLAN_CATALOG["mobility"]
+
+        # Specific mobility plan upgrade execution
+        if clean_action in ("upgrade", "upgrade_plan") or any(k in low for k in ("upgrade", "rehausser", "passer à", "changer pour")):
+            if "100" in low or "75" in low:
+                selected_mob = all_mobility[3]  # Unlimited 5G+ 100GB ($75.00)
+            elif "50" in low or "65" in low:
+                selected_mob = all_mobility[2]  # Unlimited 5G 50GB ($65.00)
+            elif "25" in low or "45" in low:
+                selected_mob = all_mobility[1]  # Essential 5G 25GB ($45.00)
+            else:
+                selected_mob = all_mobility[2]  # Default to mid-tier 50GB
+
+            return ok_reply(
+                {
+                    "plan_name": selected_mob["name"],
+                    "monthly_rate": selected_mob["monthly_rate"],
+                    "rate_display": selected_mob["rate_display"],
+                    "data_gb": selected_mob["data_gb"],
+                    "network": selected_mob["network"],
+                    "upgrade_confirmed": True,
+                    "effective_date": "immédiatement" if lang.startswith("fr") else "immediately",
+                    "effective_timing": "immédiatement" if lang.startswith("fr") else "immediately",
+                    "taxes_note": "plus les taxes applicables" if lang.startswith("fr") else "plus applicable taxes",
+                    "contract_term": "month-to-month",
+                    "status": "active",
+                },
+                reference,
+                language=lang,
+                spoken_summary="Forfait mobile activé." if lang.startswith("fr") else "Mobile plan upgraded.",
+            )
+
         if budget > 0:
             matched = [p for p in all_mobility if p["monthly_rate"] <= budget]
             if not matched:

@@ -505,7 +505,7 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     if ref_match2:
         digits, suffix = ref_match2.groups()
         return {"kind": "reference", "value": f"{digits}-{suffix.upper()}"}
-    if compact.isdigit() and 4 <= len(compact) <= 9:
+    if compact.isdigit() and 4 <= len(compact) <= 12:
         return {"kind": "account", "value": compact}
     return {"kind": "unknown", "value": s}
 
@@ -530,7 +530,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             rec = dict(record)
             rec[k_last4] = rec["phone"][-4:]
             rec[k_caller] = (
-                digits[-4:] if (not has_alpha and 7 <= len(digits) <= 10) else ""
+                digits[-4:] if (not has_alpha and 7 <= len(digits) <= 12) else ""
             )
             return rec
     if norm["kind"] in ("phone", "international_phone"):
@@ -571,10 +571,12 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [],
         }
-    if not has_alpha and (7 <= len(digits) <= 10):
+    if not has_alpha and (7 <= len(digits) <= 12):
+        if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
+            return None
         return {
             "account_id": "A" + digits[-6:],
-            "phone": digits,
+            "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
             k_caller: digits[-4:],
             "first_name": "",

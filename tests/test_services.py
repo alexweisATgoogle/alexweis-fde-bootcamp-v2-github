@@ -571,5 +571,87 @@ def test_bill_breakdown_and_roaming_addons() -> None:
     assert "add_ons" in res_plans["data"]
 
 
+def test_sports_tv_not_hijacked_by_port_in() -> None:
+    st = {"logged_in": True, "account_id": "A1001"}
+    res = submit_request_impl(summary="Recherche forfait télé avec chaîne sportive", action="search_plans", service_type="tv", state=st, language="fr-CA")
+    assert res["status"] == "ok"
+    assert res["data"].get("port_in_submitted") is None
+    assert res["data"]["package_id"] == "TV-SPORTS"
+    assert res["data"]["monthly_rate"] == 20.0
+    assert res["data"]["rate_display"] == "20.00"
+
+
+def test_french_mfa_action_aliases_and_localization() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "auth_status": "pass"}
+    res_dis = submit_request_impl(summary="Désactiver mon authentification", action="desactiver_mfa", state=st, language="fr-CA")
+    assert res_dis["status"] == "ok"
+    assert res_dis["data"]["mfa_enabled"] is False
+    assert res_dis["data"]["status"] == "désactivé"
+    assert res_dis["spoken_summary"] == "MFA désactivé."
+
+    res_en = submit_request_impl(summary="Activer mon authentification", action="activer_mfa", state=st, language="fr-CA")
+    assert res_en["status"] == "ok"
+    assert res_en["data"]["mfa_enabled"] is True
+    assert res_en["data"]["status"] == "activé"
+    assert res_en["spoken_summary"] == "MFA activé."
+
+
+def test_dispute_over_limit_and_handoff_prefix() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "auth_status": "pass"}
+    res = submit_request_impl(summary="Dispute charge of $150", action="dispute", amount=150.0, state=st, language="en-US")
+    assert res["status"] == "error"
+    assert res["error"] == "LIMIT_EXCEEDED"
+    assert st.get("dispute_limit_exceeded") is True
+
+    handover_en = handover_to_person_impl(reason="refund_threshold_exceeded", state=st, language="en-US")
+    assert "Disputes exceeding the automated limit require review by a specialist." in handover_en["data"]["handoff_message"]
+    assert "I'll connect you to a billing specialist now" in handover_en["data"]["handoff_message"]
+
+    st_fr = {"logged_in": True, "account_id": "A1001", "auth_status": "pass", "dispute_limit_exceeded": True}
+    handover_fr = handover_to_person_impl(reason="refund_threshold_exceeded", state=st_fr, language="fr-CA")
+    assert "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste." in handover_fr["data"]["handoff_message"]
+    assert "Je vous transfère à un spécialiste de la facturation maintenant" in handover_fr["data"]["handoff_message"]
+
+
+def test_fiber_1500_upgrade_tier() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "auth_status": "pass"}
+    res = submit_request_impl(summary="Upgrade to 1.5 Gbps internet", action="upgrade", service_type="internet", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["plan_name"] == "Fiber 1.5 Gbps"
+    assert res["data"]["monthly_rate"] == 105.0
+    assert res["data"]["rate_display"] == "105.00"
+
+
+def test_mobility_upgrade_effective_date() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "auth_status": "pass"}
+    res = submit_request_impl(summary="Upgrade to 50GB plan", action="upgrade", service_type="mobility", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["upgrade_confirmed"] is True
+    assert res["data"]["effective_date"] == "immediately"
+    assert res["spoken_summary"] == "Mobile plan upgraded."
+
+
+def test_warranty_negation_aware_damage_check() -> None:
+    st = {"logged_in": True, "account_id": "A1001", "auth_status": "pass"}
+    # Negated damage clause should NOT trigger PHYSICAL_DAMAGE_EXCLUDED
+    res_ok = submit_request_impl(
+        summary="Device display backlight defect with no physical or water damage",
+        action="warranty",
+        state=st,
+    )
+    assert res_ok["status"] == "ok"
+    assert res_ok["data"]["warranty_submitted"] is True
+
+    # Real damage clause SHOULD trigger PHYSICAL_DAMAGE_EXCLUDED
+    res_err = submit_request_impl(
+        summary="Device dropped on pavement with cracked casing",
+        action="warranty",
+        state=st,
+    )
+    assert res_err["status"] == "error"
+    assert res_err["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
+
+
+
 
 

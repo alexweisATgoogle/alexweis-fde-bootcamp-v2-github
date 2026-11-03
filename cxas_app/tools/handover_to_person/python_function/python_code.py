@@ -743,7 +743,13 @@ def handover_to_person_impl(  # pragma: no cover
     elif clean_reason in ("fraud_escalation", "fraud") or tq == "fraud":
         message = spoken_line("empathy_protocol", resolved_lang)
     elif clean_reason in ("refund_threshold_exceeded", "transfer_to_specialist") or tq == "billing_specialist":
-        message = spoken_line("transfer_to_specialist", resolved_lang)
+        base_msg = spoken_line("transfer_to_specialist", resolved_lang)
+        threshold_prefix = (
+            "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. "
+            if resolved_lang.startswith("fr")
+            else "Disputes exceeding the automated limit require review by a specialist. "
+        )
+        message = (threshold_prefix + base_msg) if clean_reason == "refund_threshold_exceeded" or state.get("dispute_limit_exceeded") else base_msg
     elif clean_reason in ("auth_failure_handoff", "auth_failure") or tq == "tier2_auth":
         message = spoken_line("auth_failure_handoff", resolved_lang)
     elif tq == "french_technical_support" or clean_reason == "secondary_language_live_agent":
