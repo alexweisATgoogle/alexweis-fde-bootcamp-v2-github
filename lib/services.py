@@ -1484,7 +1484,8 @@ def submit_request_impl(
     if clean_action == "enroll_autopay" or any(k in low for k in ("autopay", "automatic payment", "paiement automatique", "prélèvement automatique")):
         bank_keywords = (
             "bancaire", "banque", "bank", "checking", "chequing", "chèque", "cheque",
-            "compte", "debit", "débit", "transit", "prelevement", "prélèvement", "pad"
+            "compte bancaire", "compte de chèque", "compte de cheque", "compte courant",
+            "debit", "débit", "transit", "prelevement", "prélèvement", "pad",
         )
         is_bank = any(k in low for k in bank_keywords) or any(k in str(summary or "").lower() for k in bank_keywords)
         pay_method = "bank_account" if is_bank else "credit_card_on_file"

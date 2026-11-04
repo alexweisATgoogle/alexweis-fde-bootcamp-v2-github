@@ -760,6 +760,15 @@ def test_enroll_autopay_bank_account_and_card() -> None:
     assert res_card["data"]["payment_method"] == "credit_card_on_file"
     assert res_card["data"]["discount"] == 0.0
 
+    res_fr = submit_request_impl(
+        "configurer les paiements préautorisés sur mon compte de mobilité",
+        action="enroll_autopay",
+        state=st_card,
+    )
+    assert res_fr["status"] == "ok"
+    assert res_fr["data"]["payment_method"] == "credit_card_on_file"
+    assert res_fr["data"]["card_last4"] == "7742"
+
 
 def test_port_in_action_aliases() -> None:
     st = {"account_id": "A1001", "logged_in": True}
