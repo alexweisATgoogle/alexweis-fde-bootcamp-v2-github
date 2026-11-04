@@ -71,6 +71,7 @@ def after_model_callback(
 # uses: from lib.speech import clean_agent_speech, clean_speech, enforce_handover_utterance, resolve_handover_fallback
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import hashlib
 import re
 
 _LAST4_CONTEXT_RE = re.compile(  # pragma: no cover

@@ -280,6 +280,14 @@ def _check_mock_error(  # pragma: no cover
     if str(state.get("mock_error") or "").strip():
         ref = tracking_id(tool_name, "mock_error", state.get("account_id", ""))
         state["last_tracking_id"] = ref
+        if lang.startswith("fr"):
+            return error_reply(
+                "SYSTEM_UNAVAILABLE",
+                message="Le service est temporairement indisponible.",
+                agent_action="S'excuser pour l'interruption et transférer l'appelant à un agent.",
+                reference=ref,
+                language=lang,
+            )
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 

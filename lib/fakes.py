@@ -14,6 +14,7 @@ the caller's account was found.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 import re
 from typing import Any
 
@@ -639,8 +640,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
                 rec[k_caller] = digits[-4:]
                 return rec
         digits_10 = "202" + digits
+        acc_key = "A" + digits_10[-6:]
+        pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         return {
-            "account_id": "A" + digits_10[-6:],
+            "account_id": acc_key,
             "phone": digits_10,
             k_last4: digits[-4:],
             k_caller: digits[-4:],
@@ -659,7 +662,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             "early_cancellation_fee": 150.00,
             "payment_ledger": [
                 {
-                    "payment_id": "PMT-90412",
+                    "payment_id": f"PMT-{pmt_num}",
                     "amount": 85.50,
                     "posted_date": relative_date(-1),
                     "method": "online_banking",
@@ -670,8 +673,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
             return None
+        acc_key = "A" + digits[-6:]
+        pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         return {
-            "account_id": "A" + digits[-6:],
+            "account_id": acc_key,
             "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
             k_caller: digits[-4:],
@@ -690,7 +695,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             "early_cancellation_fee": 150.00,
             "payment_ledger": [
                 {
-                    "payment_id": "PMT-90412",
+                    "payment_id": f"PMT-{pmt_num}",
                     "amount": 85.50,
                     "posted_date": relative_date(-1),
                     "method": "online_banking",
@@ -703,6 +708,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
+        pmt_num = int(hashlib.sha256(ref_id.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         base = dict(ACCOUNTS[0])
         base["account_id"] = ref_id
         base[k_last4] = base["phone"][-4:]
@@ -710,7 +716,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         base["business_flag"] = "BUS" in ref_id.upper()
         base["payment_ledger"] = [
             {
-                "payment_id": "PMT-90412",
+                "payment_id": f"PMT-{pmt_num}",
                 "amount": 85.50,
                 "posted_date": relative_date(-1),
                 "method": "online_banking",

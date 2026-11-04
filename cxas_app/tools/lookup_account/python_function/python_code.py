@@ -360,6 +360,14 @@ def _check_mock_error(  # pragma: no cover
     if str(state.get("mock_error") or "").strip():
         ref = tracking_id(tool_name, "mock_error", state.get("account_id", ""))
         state["last_tracking_id"] = ref
+        if lang.startswith("fr"):
+            return error_reply(
+                "SYSTEM_UNAVAILABLE",
+                message="Le service est temporairement indisponible.",
+                agent_action="S'excuser pour l'interruption et transférer l'appelant à un agent.",
+                reference=ref,
+                language=lang,
+            )
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
@@ -551,8 +559,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 rec[k_caller] = digits[-4:]
                 return rec
         digits_10 = "202" + digits
+        acc_key = "A" + digits_10[-6:]
+        pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         return {
-            "account_id": "A" + digits_10[-6:],
+            "account_id": acc_key,
             "phone": digits_10,
             k_last4: digits[-4:],
             k_caller: digits[-4:],
@@ -571,7 +581,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [
                 {
-                    "payment_id": "PMT-90412",
+                    "payment_id": f"PMT-{pmt_num}",
                     "amount": 85.50,
                     "posted_date": relative_date(-1),
                     "method": "online_banking",
@@ -582,8 +592,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
             return None
+        acc_key = "A" + digits[-6:]
+        pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         return {
-            "account_id": "A" + digits[-6:],
+            "account_id": acc_key,
             "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
             k_caller: digits[-4:],
@@ -602,7 +614,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [
                 {
-                    "payment_id": "PMT-90412",
+                    "payment_id": f"PMT-{pmt_num}",
                     "amount": 85.50,
                     "posted_date": relative_date(-1),
                     "method": "online_banking",
@@ -615,6 +627,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
+        pmt_num = int(hashlib.sha256(ref_id.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         base = dict(ACCOUNTS[0])
         base["account_id"] = ref_id
         base[k_last4] = base["phone"][-4:]
@@ -622,7 +635,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base["business_flag"] = "BUS" in ref_id.upper()
         base["payment_ledger"] = [
             {
-                "payment_id": "PMT-90412",
+                "payment_id": f"PMT-{pmt_num}",
                 "amount": 85.50,
                 "posted_date": relative_date(-1),
                 "method": "online_banking",
@@ -828,11 +841,20 @@ def lookup_account_impl(  # pragma: no cover
     if raw_ident.lower() in ("caller_line_id", "current_line", "ani"):
         account = dict(ACCOUNTS[0])
     elif not raw_ident:
+        if lang.startswith("fr"):
+            return error_reply(
+                "INVALID_INPUT",
+                "Aucun numéro de téléphone ou de compte n'a été fourni.",
+                "Demander à l'appelant le numéro de téléphone ou de compte associé au service.",
+                reference,
+                language=lang,
+            )
         return error_reply(
             "INVALID_INPUT",
             "No phone number or account number was given.",
             "Ask the caller for the phone number or account number on the account.",
             reference,
+            language=lang,
         )
     else:
         digits = only_digits(raw_ident)
@@ -844,7 +866,7 @@ def lookup_account_impl(  # pragma: no cover
             return error_reply(
                 "PERMISSION_DENIED",
                 message=blocked_msg,
-                agent_action="Speak the restricted caller notice and end the session.",
+                agent_action="Prononcer l'avis d'appel restreint et mettre fin à la session." if lang.startswith("fr") else "Speak the restricted caller notice and end the session.",
                 reference=reference,
                 language=lang,
                 data={
@@ -855,11 +877,20 @@ def lookup_account_impl(  # pragma: no cover
             )
         account = find_account(raw_ident)
         if account is None:
+            if lang.startswith("fr"):
+                return error_reply(
+                    "NOT_FOUND",
+                    "Aucun compte ne correspond à ce numéro.",
+                    "Demander à l'appelant de répéter le numéro un chiffre à la fois.",
+                    reference,
+                    language=lang,
+                )
             return error_reply(
                 "NOT_FOUND",
                 "No account matches that number.",
                 "Ask the caller to say the number again, one digit at a time.",
                 reference,
+                language=lang,
             )
 
     if state.get("account_id") != account["account_id"]:

@@ -273,6 +273,14 @@ def _check_mock_error(  # pragma: no cover
     if str(state.get("mock_error") or "").strip():
         ref = tracking_id(tool_name, "mock_error", state.get("account_id", ""))
         state["last_tracking_id"] = ref
+        if lang.startswith("fr"):
+            return error_reply(
+                "SYSTEM_UNAVAILABLE",
+                message="Le service est temporairement indisponible.",
+                agent_action="S'excuser pour l'interruption et transférer l'appelant à un agent.",
+                reference=ref,
+                language=lang,
+            )
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
@@ -471,13 +479,28 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
 
     return resolve_copy_locale(None)
 
-def locked_reply(reference: str, attempts: int = MAX_LOGIN_ATTEMPTS) -> dict[str, Any]:  # pragma: no cover
+def locked_reply(reference: str, attempts: int = MAX_LOGIN_ATTEMPTS, lang: str = "en-US") -> dict[str, Any]:  # pragma: no cover
     """Reply once the caller has used up their login attempts."""
+    if lang.startswith("fr"):
+        return error_reply(
+            "TOO_MANY_ATTEMPTS",
+            "Trop de codes de connexion erronés lors de cet appel.",
+            "Appeler handover_to_person immédiatement, prononcer handoff_message et appeler end_session.",
+            reference,
+            language=lang,
+            data={
+                "attempts": attempts,
+                "attempts_remaining": 0,
+                "attempts_left": 0,
+                "lockout_triggered": True,
+            },
+        )
     return error_reply(
         "TOO_MANY_ATTEMPTS",
         "Too many wrong login codes on this call.",
         "Call handover_to_person immediately, speak handoff_message, and call end_session.",
         reference,
+        language=lang,
         data={
             "attempts": attempts,
             "attempts_remaining": 0,
@@ -571,7 +594,7 @@ def send_login_code_impl(  # pragma: no cover
     failures = max(read_count(state, "auth_failure_count"), read_count(state, "login_attempts"))
     if state.get("auth_status") == "locked" or failures >= MAX_LOGIN_ATTEMPTS:
         state["auth_status"] = "locked"
-        return locked_reply(reference, failures)
+        return locked_reply(reference, failures, lang=lang)
     alt_phone = destination_phone or kwargs.get("destination_phone") or kwargs.get("phone_or_account")
     if alt_phone:
         raw_p = str(alt_phone).strip()

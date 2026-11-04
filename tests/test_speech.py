@@ -31,10 +31,10 @@ def test_strip_markdown() -> None:
 
 def test_clean_speech_and_caller_last4_preference() -> None:
     assert clean_speech("**Your number is 2025550186.**") == "Your number is 0186."
-    params = {"phone_last4": "0186", "caller_provided_phone_last4": "0199"}
+    params = {"phone_last4": "0186", "caller_provided_phone_last4": "0142"}
     assert (
         clean_agent_speech("Your number ending in 0143 is verified.", params)
-        == "Your number ending in 0199 is verified."
+        == "Your number ending in 0142 is verified."
     )
     msg = "I'm transferring you to a member of our team now. Thank you for your patience."
     handover_state = {"handover_complete": True, "handoff_message": msg}

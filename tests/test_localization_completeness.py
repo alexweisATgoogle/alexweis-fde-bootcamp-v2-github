@@ -82,3 +82,18 @@ def test_error_replies_contract(locale: str) -> None:
     if action:
         assert len(action) <= 120, f"agent_action > 120 chars: {action}"
     assert not _check_no_sibling_keys(err_reply)
+
+
+def test_french_error_replies_localized() -> None:
+    state: dict[str, Any] = {"language": "fr-CA"}
+    # NOT_FOUND
+    res_nf = lookup_account_impl(phone_or_account="000", state=state, language="fr-CA")
+    assert res_nf["status"] == "error"
+    assert "compte" in res_nf["error_message"].lower() or "numéro" in res_nf["error_message"].lower()
+    assert "demander" in res_nf["agent_action"].lower()
+
+    # INVALID_INPUT
+    res_ii = lookup_account_impl(phone_or_account="", state=state, language="fr-CA")
+    assert res_ii["status"] == "error"
+    assert "numéro" in res_ii["error_message"].lower()
+

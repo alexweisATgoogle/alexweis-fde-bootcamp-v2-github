@@ -7,7 +7,7 @@ from cxas_app.agents.specialist.after_model_callbacks.speech_hygiene import pyth
 def test_callbacks_prefer_caller_last4_and_inject_handover_line() -> None:
     state = {
         "phone_last4": "0186",
-        "caller_provided_phone_last4": "0199",
+        "caller_provided_phone_last4": "0142",
         "handover_complete": False,
     }
     resp = SimpleNamespace(
@@ -17,7 +17,7 @@ def test_callbacks_prefer_caller_last4_and_inject_handover_line() -> None:
     )
     out = router_cb.after_model_callback(SimpleNamespace(state=state), resp)
     assert out is resp
-    assert resp.content.parts[0].text == "Your number ending in 0199 is ready."
+    assert resp.content.parts[0].text == "Your number ending in 0142 is ready."
 
     handover_msg = "I'm transferring you to a member of our team now. Thank you for your patience."
     h_state = {"handover_complete": True, "handoff_message": handover_msg}

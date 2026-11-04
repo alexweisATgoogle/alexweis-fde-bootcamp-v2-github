@@ -534,6 +534,14 @@ def _check_mock_error(  # pragma: no cover
     if str(state.get("mock_error") or "").strip():
         ref = tracking_id(tool_name, "mock_error", state.get("account_id", ""))
         state["last_tracking_id"] = ref
+        if lang.startswith("fr"):
+            return error_reply(
+                "SYSTEM_UNAVAILABLE",
+                message="Le service est temporairement indisponible.",
+                agent_action="S'excuser pour l'interruption et transférer l'appelant à un agent.",
+                reference=ref,
+                language=lang,
+            )
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
@@ -842,8 +850,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 rec[k_caller] = digits[-4:]
                 return rec
         digits_10 = "202" + digits
+        acc_key = "A" + digits_10[-6:]
+        pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         return {
-            "account_id": "A" + digits_10[-6:],
+            "account_id": acc_key,
             "phone": digits_10,
             k_last4: digits[-4:],
             k_caller: digits[-4:],
@@ -862,7 +872,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [
                 {
-                    "payment_id": "PMT-90412",
+                    "payment_id": f"PMT-{pmt_num}",
                     "amount": 85.50,
                     "posted_date": relative_date(-1),
                     "method": "online_banking",
@@ -873,8 +883,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
             return None
+        acc_key = "A" + digits[-6:]
+        pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         return {
-            "account_id": "A" + digits[-6:],
+            "account_id": acc_key,
             "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
             k_caller: digits[-4:],
@@ -893,7 +905,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "early_cancellation_fee": 150.00,
             "payment_ledger": [
                 {
-                    "payment_id": "PMT-90412",
+                    "payment_id": f"PMT-{pmt_num}",
                     "amount": 85.50,
                     "posted_date": relative_date(-1),
                     "method": "online_banking",
@@ -906,6 +918,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
+        pmt_num = int(hashlib.sha256(ref_id.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         base = dict(ACCOUNTS[0])
         base["account_id"] = ref_id
         base[k_last4] = base["phone"][-4:]
@@ -913,7 +926,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base["business_flag"] = "BUS" in ref_id.upper()
         base["payment_ledger"] = [
             {
-                "payment_id": "PMT-90412",
+                "payment_id": f"PMT-{pmt_num}",
                 "amount": 85.50,
                 "posted_date": relative_date(-1),
                 "method": "online_banking",
@@ -984,17 +997,6 @@ def record_payment_attempt(  # pragma: no cover
         card_digits = normalize_code(card_or_success)
         last4_check = card_digits[-4:] if len(card_digits) >= 4 else card_digits
         is_success = bool(last4_check) and last4_check not in DECLINED_CARD_LAST4
-        acc_id = str(state.get("account_id") or "")
-        account = find_account(acc_id) if acc_id else None
-        reg_card = str(account.get("card_last4") or state.get("card_last4") or "7742") if account else str(state.get("card_last4") or "7742")
-        known_cards = {reg_card, "7742"}
-        if (
-            is_success
-            and last4_check not in known_cards
-            and failures == 0
-            and not state.get("payment_declined_once")
-        ):
-            is_success = False
     last4 = card_digits[-4:] if len(card_digits) >= 4 else card_digits
     if is_success:
         state["payment_failure_count"] = 0
@@ -1018,6 +1020,20 @@ def record_payment_attempt(  # pragma: no cover
         state["declined_card_last4"] = last4
     state["payment_declined_once"] = True
     if failures >= MAX_PAYMENT_ATTEMPTS:
+        if lang.startswith("fr"):
+            return error_reply(
+                "TOO_MANY_ATTEMPTS",
+                "Trop de tentatives de paiement refusées lors de cet appel.",
+                "Appeler handover_to_person immédiatement, prononcer handoff_message et appeler end_session.",
+                ref,
+                language=lang,
+                data={
+                    "attempts": failures,
+                    "attempts_remaining": 0,
+                    "attempts_left": 0,
+                    "lockout_triggered": True,
+                },
+            )
         return error_reply(
             "TOO_MANY_ATTEMPTS",
             "Too many declined payment attempts on this call.",
@@ -1253,6 +1269,7 @@ def submit_request_impl(  # pragma: no cover
         "changer_forfait": "upgrade",
         "payer_facture": "pay_bill",
         "contester_facture": "dispute_charge",
+        "notification_panne": "outage_notification",
     }
     if clean_action in french_action_map:
         clean_action = french_action_map[clean_action]
@@ -1261,6 +1278,14 @@ def submit_request_impl(  # pragma: no cover
     reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
 
     if not clean_summary and not clean_action:
+        if lang.startswith("fr"):
+            return error_reply(
+                "INVALID_INPUT",
+                "La demande est vide.",
+                "Demander à l'appelant quelle est sa demande.",
+                reference,
+                language=lang,
+            )
         return error_reply(
             "INVALID_INPUT",
             "The request is empty.",
@@ -1284,10 +1309,10 @@ def submit_request_impl(  # pragma: no cover
         clean_action == "outage_check"
         or (
             any(k in low for k in ("outage", "panne", "service alert", "panne de service"))
-            and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund")
+            and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund", "outage_notification")
             and not (days not in ("", None, 0, "0"))
         )
-        or (len(clean_pc) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund"))
+        or (len(clean_pc) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund", "outage_notification"))
     ) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
         if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular", "cell phone", "données mobiles")):
             return ok_reply(
@@ -1318,6 +1343,7 @@ def submit_request_impl(  # pragma: no cover
             "outage_active": outage_is_active,
             "region": region,
             "restoration_eta_iso": outage["restoration_eta_iso"],
+            "estimated_restoration": "aujourd'hui d'ici 18 h 00" if lang.startswith("fr") else "today by 6:00 PM",
             "affected_services": list(outage["affected_services"]),
             "cause": "Entretien de la ligne de distribution par fibre optique" if lang.startswith("fr") else outage["cause"],
         }
@@ -1333,6 +1359,24 @@ def submit_request_impl(  # pragma: no cover
             reference,
             language=lang,
             spoken_summary="État de la panne récupéré." if lang.startswith("fr") else "Outage status retrieved.",
+        )
+
+    # 1b. Outage Notification (SMS alert registration)
+    if clean_action in ("outage_notification", "notification_panne") or "outage_notification" in clean_action or (
+        "notification" in clean_action and any(k in low for k in ("outage", "panne", "restoration", "rétablissement", "retablissement"))
+    ):
+        p_target = str(destination_phone or state.get("destination_phone") or state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
+        return ok_reply(
+            {
+                "notification_registered": True,
+                "status": "active",
+                "phone_last4": p_target[-4:],
+                "channel": "sms",
+                "message": "Notification par texto activée pour le rétablissement de la panne." if lang.startswith("fr") else "Text notification registered for outage restoration.",
+            },
+            reference,
+            language=lang,
+            spoken_summary="Notification de panne activée." if lang.startswith("fr") else "Outage notification registered.",
         )
 
     # 2. Password Reset (M7) — Identified only, does not require login
@@ -1504,6 +1548,15 @@ def submit_request_impl(  # pragma: no cover
             acc_id = str(state.get("account_id") or "A1001")
             appt = APPOINTMENTS.get(acc_id, APPOINTMENTS.get("A1001", {}))
             if appt.get("can_cancel") is False or appt.get("status") == "en_route":
+                if lang.startswith("fr"):
+                    return error_reply(
+                        "ACTION_NOT_ALLOWED",
+                        message="Le technicien est en route et le rendez-vous ne peut être annulé.",
+                        agent_action="Informer poliment l'appelant que le technicien est déjà en route.",
+                        reference=reference,
+                        language=lang,
+                        data={"status": "en_route", "can_cancel": False},
+                    )
                 return error_reply(
                     "ACTION_NOT_ALLOWED",
                     message="The technician is currently en-route and the appointment cannot be cancelled.",
@@ -1564,6 +1617,15 @@ def submit_request_impl(  # pragma: no cover
                 language=lang,
                 spoken_summary="Paiement antérieur vérifié." if lang.startswith("fr") else "Prior payment verified.",
             )
+        if lang.startswith("fr"):
+            return error_reply(
+                "NO_PAYMENT_FOUND",
+                message="Aucun paiement récent trouvé au dossier pour régler le solde échu.",
+                agent_action="Informer l'appelant qu'aucun paiement n'a été trouvé et proposer de payer maintenant.",
+                reference=reference,
+                language=lang,
+                data={"payment_verified": False},
+            )
         return error_reply(
             "NO_PAYMENT_FOUND",
             message="No recent payment found on file to clear the past-due balance.",
@@ -1615,7 +1677,7 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 6c. Check Balance / Bill Inquiry (M3)
-    if clean_action in ("check_balance", "view_balance", "balance_inquiry", "get_balance", "bill_inquiry") or (
+    if clean_action in ("check_balance", "view_balance", "balance_inquiry", "get_balance", "bill_inquiry", "check_bill_details", "fetch_recent_bills", "bill_breakdown") or (
         clean_action == "pay_bill"
         and any(k in low for k in ("check balance", "view balance", "what is the balance", "inquire balance", "vérifier le solde", "consulter le solde", "quel est le solde"))
         and not any(k in low for k in ("pay now", "process payment", "proceed with payment", "payer maintenant", "confirmer le paiement"))
@@ -1632,16 +1694,28 @@ def submit_request_impl(  # pragma: no cover
                 current_bal = 85.50
         if not math.isfinite(current_bal):
             current_bal = 85.50
+        past_due = current_bal
+        late_fee = 10.0 if (past_due > 0 and current_bal >= 25.0) else 0.0
+        plan_amount = round((current_bal - late_fee) / 1.15, 2) if current_bal > 0 else 0.0
+        taxes_and_fees = round(current_bal - late_fee - plan_amount, 2) if current_bal > 0 else 0.0
         card_on_file = str(state.get("card_last4") or (account.get("card_last4") if account else "7742") or "7742")
         return ok_reply(
             {
                 "balance": current_bal,
                 "balance_display": display_amount(current_bal),
+                "balance_due": current_bal,
+                "balance_due_display": display_amount(current_bal),
                 "past_due_balance": current_bal,
                 "past_due_balance_display": display_amount(current_bal),
                 "due_date": relative_date(7),
                 "card_on_file_last4": card_on_file,
                 "status": "pending_payment" if current_bal > 0 else "paid",
+                "plan_amount": plan_amount,
+                "plan_amount_display": display_amount(plan_amount),
+                "taxes_and_fees": taxes_and_fees,
+                "taxes_and_fees_display": display_amount(taxes_and_fees),
+                "late_fee": late_fee,
+                "late_fee_display": display_amount(late_fee),
             },
             reference,
             language=lang,
@@ -1688,7 +1762,19 @@ def submit_request_impl(  # pragma: no cover
                 c_digits = c_match.group(1)
         if not c_digits:
             c_digits = str(state.get("card_last4") or "")
+        if not c_digits and state.get("payment_declined_once"):
+            if any(k in low for k in ("keypad", "keyed", "card", "clavier", "carte", "enter", "entré", "entre", "composé", "compose", "chiffre", "digit", "fourni", "second", "autre")):
+                dec = str(state.get("declined_card_last4") or "")
+                c_digits = "4421" if dec == "8853" else "8853"
         if not c_digits:
+            if lang.startswith("fr"):
+                return error_reply(
+                    "INVALID_INPUT",
+                    message="Aucune carte de paiement fournie.",
+                    agent_action="Demander à l'appelant les détails de sa carte de paiement.",
+                    reference=reference,
+                    language=lang,
+                )
             return error_reply(
                 "INVALID_INPUT",
                 message="No payment card was provided.",
@@ -1747,12 +1833,12 @@ def submit_request_impl(  # pragma: no cover
         is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
         ref_id = "WAR-" + tracking_id("warranty", clean_summary)
         low_clean_damage = re.sub(
-            r"\b(?:no|not|without|zero|neither|nor|never|free\s+of|aucun|aucune|pas\s+de|sans|jamais|aucun\s+dommage)\b[^.!?;,]{0,60}\b(?:damage|damaged|water|liquid|crack\w*|drop\w*|dommage|eau|liquide|fissur\w*|chute)\b",
+            r"\b(?:no|not|without|zero|neither|nor|never|free\s+of|aucun\w*|aucune|pas\s+(?:de|d['’])|sans|jamais|aucun\s+dommage|aucun\s+dégât\w*|n['’\s]est\s+pas)\b[^.!?;,]{0,60}\b(?:damage|damaged|water|liquid|crack\w*|drop\w*|dommage\w*|dégât\w*|degat\w*|eau|liquide|fissur\w*|chute\w*|tomb\w*)\b",
             "",
             low,
         )
         low_clean_damage = re.sub(
-            r"\bn['\s]est\s+pas\s+(?:fissur\w*|endommag\w*)\b",
+            r"\bn['’\s]est\s+pas\s+(?:fissur\w*|endommag\w*|tomb\w*)\b",
             "",
             low_clean_damage,
         )
@@ -1894,6 +1980,7 @@ def submit_request_impl(  # pragma: no cover
                     "days": refund_days,
                     "days_display": str(refund_days),
                     "adjustment_type": "overpayment_refund",
+                    "refund_destination": "crédit sur le prochain relevé" if lang.startswith("fr") else "statement_credit",
                     "status_code": "approved",
                 },
                 reference,
@@ -1930,6 +2017,7 @@ def submit_request_impl(  # pragma: no cover
                 "days": refund_days,
                 "days_display": str(refund_days),
                 "adjustment_type": "courtesy_credit",
+                "refund_destination": "crédit sur le prochain relevé" if lang.startswith("fr") else "statement_credit",
                 "status_code": "approved",
             },
             reference,
@@ -1990,7 +2078,7 @@ def submit_request_impl(  # pragma: no cover
         state["status"] = "suspended"
         state["suspension_reason"] = "lost_stolen"
         return ok_reply(
-            {"service_suspended": True, "reason": "lost_stolen", "effective_immediately": True},
+            {"service_suspended": True, "reason": "perdu_vole" if lang.startswith("fr") else "lost_stolen", "effective_immediately": True},
             reference,
             language=lang,
             spoken_summary="Ligne suspendue." if lang.startswith("fr") else "Line suspended.",
@@ -2252,15 +2340,15 @@ def submit_request_impl(  # pragma: no cover
                     selected_mob = p
                     break
             if selected_mob is None:
-                if re.search(r"\b(?:\$\s*75|75\s*\$|75\s*(?:dollars?|cad)|100\s*(?:gb|go)|unlimited|illimit[eé])\b", low_text):
+                if re.search(r"(?:(?<!\w)\$\s*75\b|(?<!\w)75\s*\$|\b(?:75\s*(?:dollars?|cad)|100\s*(?:gb|go)|unlimited|illimit[eé])\b)", low_text):
                     selected_mob = all_mobility[4]  # MOB-75: Unlimited 5G+ 100GB ($75.00)
-                elif re.search(r"\b(?:\$\s*55|55\s*\$|55\s*(?:dollars?|cad)|50\s*(?:gb|go)|plus)\b", low_text):
+                elif re.search(r"(?:(?<!\w)\$\s*55\b|(?<!\w)55\s*\$|\b(?:55\s*(?:dollars?|cad)|50\s*(?:gb|go)|plus)\b)", low_text):
                     selected_mob = all_mobility[3]  # MOB-55: Plus 5G 50GB ($55.00)
-                elif re.search(r"\b(?:\$\s*45|45\s*\$|45\s*(?:dollars?|cad)|30\s*(?:gb|go)|everyday|quotidien)\b", low_text):
+                elif re.search(r"(?:(?<!\w)\$\s*45\b|(?<!\w)45\s*\$|\b(?:45\s*(?:dollars?|cad)|30\s*(?:gb|go)|everyday|quotidien)\b)", low_text):
                     selected_mob = all_mobility[2]  # MOB-45: Everyday 5G 30GB ($45.00)
-                elif re.search(r"\b(?:\$\s*35|35\s*\$|35\s*(?:dollars?|cad)|15\s*(?:gb|go)|basic|de\s+base)\b", low_text):
+                elif re.search(r"(?:(?<!\w)\$\s*35\b|(?<!\w)35\s*\$|\b(?:35\s*(?:dollars?|cad)|15\s*(?:gb|go)|basic|de\s+base)\b)", low_text):
                     selected_mob = all_mobility[1]  # MOB-35: Basic 15GB 4G ($35.00)
-                elif re.search(r"\b(?:\$\s*25|25\s*\$|25\s*(?:dollars?|cad)|1\s*(?:gb|go)|starter|de\s+d[eé]part)\b", low_text):
+                elif re.search(r"(?:(?<!\w)\$\s*25\b|(?<!\w)25\s*\$|\b(?:25\s*(?:dollars?|cad)|1\s*(?:gb|go)|starter|de\s+d[eé]part)\b)", low_text):
                     selected_mob = all_mobility[0]  # MOB-25: Starter Talk & Text 1GB ($25.00)
                 else:
                     selected_mob = all_mobility[2]  # Default to mid-tier MOB-45 ($45.00)
@@ -2277,7 +2365,7 @@ def submit_request_impl(  # pragma: no cover
                     "effective_date": "immédiatement" if lang.startswith("fr") else "immediately",
                     "effective_timing": "immédiatement" if lang.startswith("fr") else "immediately",
                     "taxes_note": "plus les taxes applicables" if lang.startswith("fr") else "plus applicable taxes",
-                    "contract_term": "month-to-month",
+                    "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
                     "status": "active",
                 },
                 reference,
@@ -2316,8 +2404,8 @@ def submit_request_impl(  # pragma: no cover
                 "count": len(curated),
                 "activation_fee": 0.0,
                 "activation_fee_display": "0.00",
-                "overage_policy": "No data overage fees; speeds throttled to 512 Kbps after limit",
-                "contract_term": "month-to-month",
+                "overage_policy": "Aucun frais de dépassement de données; vitesse réduite à 512 Kbps après la limite" if lang.startswith("fr") else "No data overage fees; speeds throttled to 512 Kbps after limit",
+                "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
                 "add_ons": roaming_addons,
             },
             reference,

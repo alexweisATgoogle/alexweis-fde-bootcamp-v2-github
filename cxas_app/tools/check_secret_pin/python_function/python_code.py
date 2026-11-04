@@ -268,6 +268,14 @@ def _check_mock_error(  # pragma: no cover
     if str(state.get("mock_error") or "").strip():
         ref = tracking_id(tool_name, "mock_error", state.get("account_id", ""))
         state["last_tracking_id"] = ref
+        if lang.startswith("fr"):
+            return error_reply(
+                "SYSTEM_UNAVAILABLE",
+                message="Le service est temporairement indisponible.",
+                agent_action="S'excuser pour l'interruption et transférer l'appelant à un agent.",
+                reference=ref,
+                language=lang,
+            )
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
@@ -468,13 +476,28 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
 
     return resolve_copy_locale(None)
 
-def locked_reply(reference: str, attempts: int = MAX_LOGIN_ATTEMPTS) -> dict[str, Any]:  # pragma: no cover
+def locked_reply(reference: str, attempts: int = MAX_LOGIN_ATTEMPTS, lang: str = "en-US") -> dict[str, Any]:  # pragma: no cover
     """Reply once the caller has used up their login attempts."""
+    if lang.startswith("fr"):
+        return error_reply(
+            "TOO_MANY_ATTEMPTS",
+            "Trop de codes de connexion erronés lors de cet appel.",
+            "Appeler handover_to_person immédiatement, prononcer handoff_message et appeler end_session.",
+            reference,
+            language=lang,
+            data={
+                "attempts": attempts,
+                "attempts_remaining": 0,
+                "attempts_left": 0,
+                "lockout_triggered": True,
+            },
+        )
     return error_reply(
         "TOO_MANY_ATTEMPTS",
         "Too many wrong login codes on this call.",
         "Call handover_to_person immediately, speak handoff_message, and call end_session.",
         reference,
+        language=lang,
         data={
             "attempts": attempts,
             "attempts_remaining": 0,
@@ -720,10 +743,24 @@ def check_secret_pin_impl(  # pragma: no cover
         if failures >= MAX_PIN_ATTEMPTS:
             state["auth_status"] = "locked"
             state["logged_in"] = False
-            return locked_reply(reference, failures)
+            return locked_reply(reference, failures, lang=lang)
         state["logged_in"] = False
         state["auth_status"] = "none"
         remaining = MAX_PIN_ATTEMPTS - failures
+        if lang.startswith("fr"):
+            return error_reply(
+                "WRONG_CODE",
+                "Le NIP secret ne correspond pas.",
+                "Informer l'appelant que le NIP est erroné et lui demander de réessayer.",
+                reference,
+                data={
+                    "attempts": failures,
+                    "attempts_left": remaining,
+                    "attempts_remaining": remaining,
+                    "lockout_triggered": False,
+                },
+                language=lang,
+            )
         return error_reply(
             "WRONG_CODE",
             "The secret PIN does not match.",
@@ -754,8 +791,16 @@ def check_secret_pin_impl(  # pragma: no cover
     if state.get("auth_status") == "locked" or failures >= MAX_PIN_ATTEMPTS:
         state["auth_status"] = "locked"
         state["logged_in"] = False
-        return locked_reply(reference, failures)
+        return locked_reply(reference, failures, lang=lang)
     if not (4 <= len(digits) <= 10):
+        if lang.startswith("fr"):
+            return error_reply(
+                "INVALID_INPUT",
+                "Un NIP secret comporte de 4 à 10 chiffres.",
+                "Demander à l'appelant de saisir à nouveau son NIP secret sur le clavier.",
+                reference,
+                language=lang,
+            )
         return error_reply(
             "INVALID_INPUT",
             "A secret PIN has 4 to 10 digits.",
@@ -772,8 +817,22 @@ def check_secret_pin_impl(  # pragma: no cover
         state["logged_in"] = False
         if failures >= MAX_PIN_ATTEMPTS:
             state["auth_status"] = "locked"
-            return locked_reply(reference, failures)
+            return locked_reply(reference, failures, lang=lang)
         remaining = MAX_PIN_ATTEMPTS - failures
+        if lang.startswith("fr"):
+            return error_reply(
+                "WRONG_CODE",
+                "Le NIP secret ne correspond pas.",
+                "Informer l'appelant que le NIP est erroné et lui demander de réessayer.",
+                reference,
+                data={
+                    "attempts": failures,
+                    "attempts_left": remaining,
+                    "attempts_remaining": remaining,
+                    "lockout_triggered": False,
+                },
+                language=lang,
+            )
         return error_reply(
             "WRONG_CODE",
             "The secret PIN does not match.",

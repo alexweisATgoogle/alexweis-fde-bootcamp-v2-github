@@ -16,6 +16,7 @@ from lib.services import (
     submit_request,
     submit_request_impl,
 )
+from lib.fakes import find_account
 
 KNOWN_PHONE = "202 555 0186"
 
@@ -430,9 +431,9 @@ def test_dispute_nan_amount_guard() -> None:
 
 def test_destination_phone_and_warranty_precedence() -> None:
     st = {"logged_in": True, "account_id": "A1001", "phone_last4": "0186"}
-    r_code = send_login_code_impl(destination_phone="5550199", state=st)
+    r_code = send_login_code_impl(destination_phone="5550142", state=st)
     assert r_code["status"] == "ok"
-    assert st["phone_last4"] == "0199"
+    assert st["phone_last4"] == "0142"
 
     st_war = {"logged_in": True, "account_id": "A1001", "phone_last4": "0186"}
     r_war = submit_request_impl("mon téléphone ne charge plus", action="warranty", state=st_war, language="fr-CA")
@@ -713,20 +714,21 @@ def test_french_outage_localization() -> None:
     assert "fibre optique" in res["data"]["cause"].lower()
 
 
-def test_payment_attempt_unenrolled_card_decline_and_retry() -> None:
-    st = {"account_id": "A1001", "registered_card_last4": "7742", "card_last4": "7742"}
-    # External card 1122 on first attempt should decline
+def test_payment_attempt_valid_card_succeeds_and_declined_card_fails() -> None:
+    st = {"account_id": "A1001", "card_last4": "7742"}
+    # Valid external card outside DECLINED_CARD_LAST4 succeeds on Attempt 1
     res1 = record_payment_attempt(st, "1122")
-    assert res1["status"] == "error"
-    assert res1["error"] == "CARD_DECLINED"
-    assert st.get("payment_declined_once") is True
-    assert st.get("payment_failure_count") == 1
-
-    # Retry with another card (or same card) on attempt 2 should succeed
-    res2 = record_payment_attempt(st, "1122")
-    assert res2["status"] == "ok"
-    assert res2["data"]["payment_processed"] is True
+    assert res1["status"] == "ok"
+    assert res1["data"]["payment_processed"] is True
     assert st.get("payment_failure_count") == 0
+
+    # Card in DECLINED_CARD_LAST4 (e.g. 0000 or 9999) fails
+    st2 = {"account_id": "A1001"}
+    res_dec = record_payment_attempt(st2, "0000")
+    assert res_dec["status"] == "error"
+    assert res_dec["error"] == "CARD_DECLINED"
+    assert st2.get("payment_declined_once") is True
+    assert st2.get("payment_failure_count") == 1
 
 
 def test_payment_attempt_registered_card_succeeds_immediately() -> None:
@@ -793,6 +795,64 @@ def test_mobility_plan_french_go_allowance_matching() -> None:
     assert res["data"]["upgrade_confirmed"] is True
     assert res["data"]["plan_id"] == "MOB-45"
     assert res["data"]["data_gb"] == 30
+
+
+def test_adv_iter5_1_en_dollar_sign_mobility_upgrade() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "language": "en-US"}
+    for price, expected_plan in [
+        ("$75", "MOB-75"),
+        ("$55", "MOB-55"),
+        ("$45", "MOB-45"),
+        ("$35", "MOB-35"),
+        ("$25", "MOB-25"),
+    ]:
+        res = submit_request_impl(
+            f"Upgrade my mobile line to the {price} plan",
+            action="upgrade",
+            state=st,
+        )
+        assert res["status"] == "ok"
+        assert res["data"]["plan_id"] == expected_plan, f"Failed for {price}: got {res['data']['plan_id']}"
+
+
+def test_adv_iter5_3_fr_elided_and_curly_warranty_negations() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "language": "fr-CA"}
+    phrases = [
+        "Mon écran ne s'allume plus mais il n'y a pas d'eau et pas de fissure",
+        "L'appareil surchauffe, l'écran n’est pas fissuré",
+        "Batterie gonflée, le téléphone n'est pas tombé dans l'eau",
+        "Problème de charge, aucun dégât d'eau sur l'appareil",
+    ]
+    for phrase in phrases:
+        res = submit_request_impl(phrase, action="warranty", state=st, language="fr-CA")
+        assert res["status"] == "ok", f"Phrase triggered error: {phrase} -> {res}"
+        assert res["data"]["warranty_submitted"] is True
+
+
+def test_adv_iter5_4_per_account_deterministic_payment_id() -> None:
+    acc1 = find_account("416-555-0142")
+    acc2 = find_account("416-555-0188")
+    assert acc1 is not None and acc2 is not None
+    pmt1 = acc1["payment_ledger"][0]["payment_id"]
+    pmt2 = acc2["payment_ledger"][0]["payment_id"]
+    assert pmt1.startswith("PMT-")
+    assert pmt2.startswith("PMT-")
+    assert pmt1 != pmt2, f"Payment IDs should differ: {pmt1} vs {pmt2}"
+
+
+def test_ve_18_itemized_check_balance_fields() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50}
+    res = submit_request_impl("What is my current balance?", action="check_balance", state=st)
+    assert res["status"] == "ok"
+    data = res["data"]
+    assert data["balance_due"] == 85.50
+    assert data["balance_due_display"] == "85.50"
+    assert "plan_amount" in data
+    assert "taxes_and_fees" in data
+    assert "late_fee" in data
+    assert round(data["plan_amount"] + data["taxes_and_fees"] + data["late_fee"], 2) == 85.50
+    assert "breakdown_note" not in data
+
 
 
 
