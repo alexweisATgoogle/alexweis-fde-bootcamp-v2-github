@@ -713,6 +713,80 @@ def test_french_outage_localization() -> None:
     assert "fibre optique" in res["data"]["cause"].lower()
 
 
+def test_payment_attempt_unenrolled_card_decline_and_retry() -> None:
+    st = {"account_id": "A1001", "registered_card_last4": "7742", "card_last4": "7742"}
+    # External card 1122 on first attempt should decline
+    res1 = record_payment_attempt(st, "1122")
+    assert res1["status"] == "error"
+    assert res1["error"] == "CARD_DECLINED"
+    assert st.get("payment_declined_once") is True
+    assert st.get("payment_failure_count") == 1
+
+    # Retry with another card (or same card) on attempt 2 should succeed
+    res2 = record_payment_attempt(st, "1122")
+    assert res2["status"] == "ok"
+    assert res2["data"]["payment_processed"] is True
+    assert st.get("payment_failure_count") == 0
+
+
+def test_payment_attempt_registered_card_succeeds_immediately() -> None:
+    st = {"account_id": "A1001", "registered_card_last4": "7742", "card_last4": "7742"}
+    res = record_payment_attempt(st, "7742")
+    assert res["status"] == "ok"
+    assert res["data"]["payment_processed"] is True
+
+
+def test_enroll_autopay_bank_account_and_card() -> None:
+    st_bank = {"account_id": "A1001", "logged_in": True, "card_last4": "7742"}
+    res_bank = submit_request_impl(
+        "Set up autopay using my checking account",
+        action="enroll_autopay",
+        state=st_bank,
+    )
+    assert res_bank["status"] == "ok"
+    assert res_bank["data"]["autopay_enrolled"] is True
+    assert res_bank["data"]["payment_method"] == "bank_account"
+    assert res_bank["data"]["discount"] == 5.0
+    assert res_bank["data"]["discount_display"] == "5.00"
+
+    st_card = {"account_id": "A1001", "logged_in": True, "card_last4": "7742"}
+    res_card = submit_request_impl(
+        "Set up autopay with card on file",
+        action="enroll_autopay",
+        state=st_card,
+    )
+    assert res_card["status"] == "ok"
+    assert res_card["data"]["autopay_enrolled"] is True
+    assert res_card["data"]["payment_method"] == "credit_card_on_file"
+    assert res_card["data"]["discount"] == 0.0
+
+
+def test_port_in_action_aliases() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl(
+        "Transfer my family mobile line from Bell",
+        action="transfer_number",
+        state=st,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["port_in_submitted"] is True
+    assert "porting_window" in res["data"]
+
+
+def test_mobility_plan_french_go_allowance_matching() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "language": "fr-CA"}
+    res = submit_request_impl(
+        "Je veux passer au forfait 30 Go",
+        action="upgrade_plan",
+        state=st,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["upgrade_confirmed"] is True
+    assert res["data"]["plan_id"] == "MOB-45"
+    assert res["data"]["data_gb"] == 30
+
+
+
 
 
 

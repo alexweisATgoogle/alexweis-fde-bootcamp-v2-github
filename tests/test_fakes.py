@@ -117,3 +117,14 @@ def test_resolve_postal_code_region_generic_sectors() -> None:
     assert resolve_postal_code_region("K1A 1B1") == "Region-B"
     assert resolve_postal_code_region("A1A 1B1") == "Region-B"
 
+
+def test_synthesized_account_payment_ledger() -> None:
+    acc = find_account("514-555-0199")
+    assert acc is not None
+    assert len(acc["payment_ledger"]) == 1
+    ledger_entry = acc["payment_ledger"][0]
+    assert ledger_entry["status"] == "cleared"
+    assert ledger_entry["amount"] == 85.50
+    assert ledger_entry["payment_id"] == "PMT-90412"
+
+

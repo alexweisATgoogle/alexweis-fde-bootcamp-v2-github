@@ -860,7 +860,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [],
+            "payment_ledger": [
+                {
+                    "payment_id": "PMT-90412",
+                    "amount": 85.50,
+                    "posted_date": relative_date(-1),
+                    "method": "online_banking",
+                    "status": "cleared",
+                }
+            ],
         }
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
@@ -883,7 +891,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [],
+            "payment_ledger": [
+                {
+                    "payment_id": "PMT-90412",
+                    "amount": 85.50,
+                    "posted_date": relative_date(-1),
+                    "method": "online_banking",
+                    "status": "cleared",
+                }
+            ],
         }
     if (
         (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
@@ -895,7 +911,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        base["payment_ledger"] = []
+        base["payment_ledger"] = [
+            {
+                "payment_id": "PMT-90412",
+                "amount": 85.50,
+                "posted_date": relative_date(-1),
+                "method": "online_banking",
+                "status": "cleared",
+            }
+        ]
         return base
     return None
 
@@ -952,6 +976,7 @@ def record_payment_attempt(  # pragma: no cover
     if mock_err:
         return mock_err
     ref = reference or tracking_id("payment_attempt", state.get("account_id", ""))
+    failures = read_count(state, "payment_failure_count")
     if isinstance(card_or_success, bool):
         is_success = card_or_success
         card_digits = normalize_code(state.get("card_last4", ""))
@@ -959,6 +984,17 @@ def record_payment_attempt(  # pragma: no cover
         card_digits = normalize_code(card_or_success)
         last4_check = card_digits[-4:] if len(card_digits) >= 4 else card_digits
         is_success = bool(last4_check) and last4_check not in DECLINED_CARD_LAST4
+        acc_id = str(state.get("account_id") or "")
+        account = find_account(acc_id) if acc_id else None
+        reg_card = str(account.get("card_last4") or state.get("card_last4") or "7742") if account else str(state.get("card_last4") or "7742")
+        known_cards = {reg_card, "7742"}
+        if (
+            is_success
+            and last4_check not in known_cards
+            and failures == 0
+            and not state.get("payment_declined_once")
+        ):
+            is_success = False
     last4 = card_digits[-4:] if len(card_digits) >= 4 else card_digits
     if is_success:
         state["payment_failure_count"] = 0
@@ -1243,6 +1279,7 @@ def submit_request_impl(  # pragma: no cover
             state["phone_last4"] = p_digits[-4:]
 
     # 1. Outage Check (M4) — Information inquiry, does not require login
+    clean_pc = str(postal_code or "").strip()
     if (
         clean_action == "outage_check"
         or (
@@ -1250,7 +1287,7 @@ def submit_request_impl(  # pragma: no cover
             and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund")
             and not (days not in ("", None, 0, "0"))
         )
-        or (postal_code and len(postal_code) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund"))
+        or (len(clean_pc) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund"))
     ) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
         if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular", "cell phone", "données mobiles")):
             return ok_reply(
@@ -1269,7 +1306,7 @@ def submit_request_impl(  # pragma: no cover
                 language=lang,
                 spoken_summary="Vérification réseau mobile terminée." if lang.startswith("fr") else "Mobile network check completed.",
             )
-        pc = str(postal_code or "").strip()
+        pc = clean_pc
         if not pc:
             pc_match = re.search(r"\b([A-Za-z]\d[A-Za-z](?:\s*\d[A-Za-z]\d)?)\b", clean_summary)
             if pc_match:
@@ -1695,7 +1732,13 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 7b. Strict Warranty Precedence before Dispute
-    if clean_action == "warranty" and any(k in low for k in ("port", "transfer number", "old carrier", "competitor", "keep my number", "transférer numéro", "transferer numero", "conserver")):
+    has_port_terms = bool(
+        re.search(
+            r"\b(?:port[\s_-]*(?:in|out)?|transfer\s+number|carrier\s+switch|old\s+carrier|competitor|keep\s+my\s+number|transf[eé]rer\s+num[eé]ro|conserver)\b",
+            low,
+        )
+    )
+    if clean_action == "warranty" and has_port_terms:
         clean_action = "port_in"
 
     if clean_action == "warranty" or is_safety_hazard or (
@@ -1704,9 +1747,14 @@ def submit_request_impl(  # pragma: no cover
         is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
         ref_id = "WAR-" + tracking_id("warranty", clean_summary)
         low_clean_damage = re.sub(
-            r"\b(?:no|not|without|zero|neither|nor|aucun|aucune|pas\s+de|sans)\b[^.!?;,]{0,50}\b(?:damage|damaged|water|liquid|crack\w*|drop\w*|dommage|eau|liquide|fissur\w*|chute)\b",
+            r"\b(?:no|not|without|zero|neither|nor|never|free\s+of|aucun|aucune|pas\s+de|sans|jamais|aucun\s+dommage)\b[^.!?;,]{0,60}\b(?:damage|damaged|water|liquid|crack\w*|drop\w*|dommage|eau|liquide|fissur\w*|chute)\b",
             "",
             low,
+        )
+        low_clean_damage = re.sub(
+            r"\bn['\s]est\s+pas\s+(?:fissur\w*|endommag\w*)\b",
+            "",
+            low_clean_damage,
         )
         has_physical_damage = bool(
             re.search(
@@ -1950,6 +1998,15 @@ def submit_request_impl(  # pragma: no cover
 
     # 12. Autopay Setup
     if clean_action == "enroll_autopay" or any(k in low for k in ("autopay", "automatic payment", "paiement automatique", "prélèvement automatique")):
+        bank_keywords = (
+            "bancaire", "banque", "bank", "checking", "chequing", "chèque", "cheque",
+            "compte", "debit", "débit", "transit", "prelevement", "prélèvement", "pad"
+        )
+        is_bank = any(k in low for k in bank_keywords) or any(k in str(summary or "").lower() for k in bank_keywords)
+        pay_method = "bank_account" if is_bank else "credit_card_on_file"
+        discount_val = 5.0 if is_bank else 0.0
+        discount_disp = "5.00" if is_bank else "0.00"
+
         c_digits = normalize_code(card_last4)
         if not c_digits:
             c_match = re.search(r"\b(\d{4})\b", clean_summary)
@@ -1957,13 +2014,21 @@ def submit_request_impl(  # pragma: no cover
                 c_digits = c_match.group(1)
         if not c_digits:
             c_digits = str(state.get("card_last4") or "7742")
-        if c_digits in DECLINED_CARD_LAST4:
+        if not is_bank and c_digits in DECLINED_CARD_LAST4:
             attempt_res = record_payment_attempt(state, c_digits, language=lang)
             return attempt_res
         state["autopay_enrolled"] = True
-        state["card_last4"] = c_digits[-4:]
+        state["last_payment_method"] = pay_method
+        if not is_bank:
+            state["card_last4"] = c_digits[-4:]
         return ok_reply(
-            {"autopay_enrolled": True, "card_last4": c_digits[-4:]},
+            {
+                "autopay_enrolled": True,
+                "payment_method": pay_method,
+                "card_last4": c_digits[-4:] if not is_bank else "",
+                "discount": discount_val,
+                "discount_display": discount_disp,
+            },
             reference,
             language=lang,
             spoken_summary="Adhésion au paiement automatique terminée." if lang.startswith("fr") else "Autopay enrollment completed.",
@@ -1990,8 +2055,21 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 12c. Port-In Number Transfer (M5)
-    is_port_in_action = clean_action == "port_in"
-    has_port_kw = bool(re.search(r"\b(?:port\s*in|port|transfer\s+number|transférer\s+numéro|transferer\s+numero)\b", low))
+    is_port_in_action = clean_action in (
+        "port_in",
+        "transfer_number",
+        "number_transfer",
+        "transfert_numero",
+        "line_transfer",
+        "transfer_line",
+        "port_number",
+    )
+    has_port_kw = bool(
+        re.search(
+            r"\b(?:port\s*in|port|transfer\s+number|transférer\s+numéro|transferer\s+numero)\b",
+            low,
+        )
+    )
     if is_port_in_action or (not clean_action and has_port_kw and clean_service != "tv" and "sport" not in low):
         port_ref = "PORT-" + tracking_id("port", clean_summary)
         is_landline = any(k in low for k in ("landline", "ligne fixe", "fixe", "home phone"))
@@ -2161,25 +2239,27 @@ def submit_request_impl(  # pragma: no cover
         )
         if is_upgrade_action:
             # Deterministic plan matching by plan_id, name, data allowance, and price
+            # Strip phone numbers, account IDs, and timestamps before rate matching
+            low_text = re.sub(r"\b(?:\d{3}[-.\s]?\d{3}[-.\s]?\d{4}|\d{7,10}|A\d{4,8}|ACC-?\d{4,8})\b", " ", low)
             selected_mob = None
             for p in all_mobility:
                 if (
-                    p["plan_id"].lower() in low
-                    or p["name"].lower() in low
-                    or (p["data_gb"] > 0 and re.search(rf"\b{p['data_gb']}\s*gb\b", low))
+                    p["plan_id"].lower() in low_text
+                    or p["name"].lower() in low_text
+                    or (p["data_gb"] > 0 and re.search(rf"\b{p['data_gb']}\s*(?:gb|go|gigaoctets?)\b", low_text))
                 ):
                     selected_mob = p
                     break
             if selected_mob is None:
-                if any(k in low for k in ("100", "75", "unlimited", "illimité")):
+                if re.search(r"\b(?:\$\s*75|75\s*\$|75\s*(?:dollars?|cad)|100\s*(?:gb|go)|unlimited|illimit[eé])\b", low_text):
                     selected_mob = all_mobility[4]  # MOB-75: Unlimited 5G+ 100GB ($75.00)
-                elif any(k in low for k in ("50", "55", "plus")):
+                elif re.search(r"\b(?:\$\s*55|55\s*\$|55\s*(?:dollars?|cad)|50\s*(?:gb|go)|plus)\b", low_text):
                     selected_mob = all_mobility[3]  # MOB-55: Plus 5G 50GB ($55.00)
-                elif any(k in low for k in ("30", "45", "everyday", "quotidien")):
+                elif re.search(r"\b(?:\$\s*45|45\s*\$|45\s*(?:dollars?|cad)|30\s*(?:gb|go)|everyday|quotidien)\b", low_text):
                     selected_mob = all_mobility[2]  # MOB-45: Everyday 5G 30GB ($45.00)
-                elif any(k in low for k in ("15", "35", "basic", "de base")):
+                elif re.search(r"\b(?:\$\s*35|35\s*\$|35\s*(?:dollars?|cad)|15\s*(?:gb|go)|basic|de\s+base)\b", low_text):
                     selected_mob = all_mobility[1]  # MOB-35: Basic 15GB 4G ($35.00)
-                elif any(k in low for k in ("25", "starter", "de départ")) or re.search(r"\b1\b", low):
+                elif re.search(r"\b(?:\$\s*25|25\s*\$|25\s*(?:dollars?|cad)|1\s*(?:gb|go)|starter|de\s+d[eé]part)\b", low_text):
                     selected_mob = all_mobility[0]  # MOB-25: Starter Talk & Text 1GB ($25.00)
                 else:
                     selected_mob = all_mobility[2]  # Default to mid-tier MOB-45 ($45.00)

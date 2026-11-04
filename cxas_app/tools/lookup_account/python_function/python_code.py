@@ -569,7 +569,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [],
+            "payment_ledger": [
+                {
+                    "payment_id": "PMT-90412",
+                    "amount": 85.50,
+                    "posted_date": relative_date(-1),
+                    "method": "online_banking",
+                    "status": "cleared",
+                }
+            ],
         }
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
@@ -592,7 +600,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "active_services": ["mobile", "internet"],
             "contract_end_date": relative_date(180),
             "early_cancellation_fee": 150.00,
-            "payment_ledger": [],
+            "payment_ledger": [
+                {
+                    "payment_id": "PMT-90412",
+                    "amount": 85.50,
+                    "posted_date": relative_date(-1),
+                    "method": "online_banking",
+                    "status": "cleared",
+                }
+            ],
         }
     if (
         (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
@@ -604,7 +620,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        base["payment_ledger"] = []
+        base["payment_ledger"] = [
+            {
+                "payment_id": "PMT-90412",
+                "amount": 85.50,
+                "posted_date": relative_date(-1),
+                "method": "online_banking",
+                "status": "cleared",
+            }
+        ]
         return base
     return None
 
