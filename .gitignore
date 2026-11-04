@@ -29,10 +29,5 @@ pulled/
 *.env
 .env*
 *.json.key
-
-# Local academy eval tool (contains user IAP credentials)
-scripts/academy_eval.py
-
 # Agent teamwork metadata
 .agents/
-

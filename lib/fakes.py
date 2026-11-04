@@ -181,7 +181,7 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
 
 # Credentials & Ladder Constants
 ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(
-    {"9999", "999999", "8888"} | {c * n for c in ("0", "1") for n in (4, 6)}
+    {c * n for c in ("0", "1", "9") for n in (4, 6)} | {c * 4 for c in ("2", "8")}
 )
 VALID_OTPS: frozenset[str] = frozenset({"271846", "482913"})
 VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})
@@ -219,14 +219,18 @@ OUTAGE_REGIONS: dict[str, dict[str, Any]] = {
 def resolve_postal_code_region(postal_code: str) -> str:
     """Map Canadian postal code / FSA to PRD region via mathematical sector digit.
 
-    Odd sector digit (1, 3, 5, 7, 9) -> Region-A (Active Outage)
-    Even sector digit (0, 2, 4, 6, 8) -> Region-B (Normal Operation)
+    Delivery sector digit (index 3, e.g. '0' in generic A1A 0B1):
+      - Even sector digit (0, 2, 4, 6, 8) -> Region-A (Active Outage)
+      - Odd sector digit (1, 3, 5, 7, 9) -> Region-B (Normal Operation)
+    FSA digit fallback (index 1, e.g. '1' in generic A1A):
+      - Odd -> Region-A, Even -> Region-B
     Default -> Region-A
     """
     clean = re.sub(r"[^A-Za-z0-9]", "", postal_code.upper())
+    if len(clean) >= 4 and clean[3].isdigit():
+        return "Region-A" if int(clean[3]) % 2 == 0 else "Region-B"
     if len(clean) >= 2 and clean[1].isdigit():
-        digit = int(clean[1])
-        return "Region-A" if digit % 2 == 1 else "Region-B"
+        return "Region-A" if int(clean[1]) % 2 == 1 else "Region-B"
     return "Region-A"
 
 

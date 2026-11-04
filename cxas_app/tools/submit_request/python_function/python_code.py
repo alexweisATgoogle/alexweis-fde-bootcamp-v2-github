@@ -1022,14 +1022,18 @@ def record_payment_attempt(  # pragma: no cover
 def resolve_postal_code_region(postal_code: str) -> str:  # pragma: no cover
     """Map Canadian postal code / FSA to PRD region via mathematical sector digit.
 
-    Odd sector digit (1, 3, 5, 7, 9) -> Region-A (Active Outage)
-    Even sector digit (0, 2, 4, 6, 8) -> Region-B (Normal Operation)
+    Delivery sector digit (index 3, e.g. '0' in generic A1A 0B1):
+      - Even sector digit (0, 2, 4, 6, 8) -> Region-A (Active Outage)
+      - Odd sector digit (1, 3, 5, 7, 9) -> Region-B (Normal Operation)
+    FSA digit fallback (index 1, e.g. '1' in generic A1A):
+      - Odd -> Region-A, Even -> Region-B
     Default -> Region-A
     """
     clean = re.sub(r"[^A-Za-z0-9]", "", postal_code.upper())
+    if len(clean) >= 4 and clean[3].isdigit():
+        return "Region-A" if int(clean[3]) % 2 == 0 else "Region-B"
     if len(clean) >= 2 and clean[1].isdigit():
-        digit = int(clean[1])
-        return "Region-A" if digit % 2 == 1 else "Region-B"
+        return "Region-A" if int(clean[1]) % 2 == 1 else "Region-B"
     return "Region-A"
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
@@ -1199,11 +1203,20 @@ def submit_request_impl(  # pragma: no cover
     clean_summary = " ".join(str(summary or "").split())
     clean_action = str(action or "").strip().lower()
     french_action_map = {
+        "verifier_panne": "outage_check",
+        "etat_panne": "outage_check",
+        "panne_reseau": "outage_check",
+        "reinitialiser_mot_de_passe": "password_reset",
+        "activer_mfa": "enable_mfa",
         "desactiver_mfa": "disable_mfa",
         "désactiver_mfa": "disable_mfa",
-        "activer_mfa": "enable_mfa",
+        "desactiver_authentification": "disable_mfa",
+        "désactiver_authentification": "disable_mfa",
+        "rechercher_forfaits": "search_plans",
         "rehausser_forfait": "upgrade",
         "changer_forfait": "upgrade",
+        "payer_facture": "pay_bill",
+        "contester_facture": "dispute_charge",
     }
     if clean_action in french_action_map:
         clean_action = french_action_map[clean_action]
@@ -1269,7 +1282,7 @@ def submit_request_impl(  # pragma: no cover
             "region": region,
             "restoration_eta_iso": outage["restoration_eta_iso"],
             "affected_services": list(outage["affected_services"]),
-            "cause": outage["cause"],
+            "cause": "Entretien de la ligne de distribution par fibre optique" if lang.startswith("fr") else outage["cause"],
         }
         if not outage_is_active:
             res_data["sms_guide_available"] = True
@@ -1695,7 +1708,13 @@ def submit_request_impl(  # pragma: no cover
             "",
             low,
         )
-        if any(k in low_clean_damage for k in ("crack", "fissur", "liquid", "water", "eau", "drop", "chute")):
+        has_physical_damage = bool(
+            re.search(
+                r"\b(?:crack(?:ed|s|ing)?|drop(?:ped|s)?|liquid|water|eau|chute|fissur\w*)\b",
+                low_clean_damage,
+            )
+        )
+        if has_physical_damage:
             return error_reply(
                 "PHYSICAL_DAMAGE_EXCLUDED",
                 message="Les dommages physiques ou liquides sont exclus de la couverture de garantie." if lang.startswith("fr") else "Physical or liquid damage is excluded from warranty coverage.",
@@ -1907,7 +1926,7 @@ def submit_request_impl(  # pragma: no cover
                 {"mfa_enabled": False, "status": "désactivé" if lang.startswith("fr") else "disabled"},
                 reference,
                 language=lang,
-                spoken_summary="MFA désactivé." if lang.startswith("fr") else "MFA disabled.",
+                spoken_summary="Authentification multifacteur désactivée." if lang.startswith("fr") else "MFA disabled.",
             )
         else:
             state["mfa_enabled"] = True
@@ -1915,7 +1934,7 @@ def submit_request_impl(  # pragma: no cover
                 {"mfa_enabled": True, "status": "activé" if lang.startswith("fr") else "enabled"},
                 reference,
                 language=lang,
-                spoken_summary="MFA activé." if lang.startswith("fr") else "MFA enabled.",
+                spoken_summary="Authentification multifacteur activée." if lang.startswith("fr") else "MFA enabled.",
             )
 
     # 11. Lost / Stolen Suspension
@@ -2133,19 +2152,42 @@ def submit_request_impl(  # pragma: no cover
         all_mobility = PLAN_CATALOG["mobility"]
 
         # Specific mobility plan upgrade execution
-        if clean_action in ("upgrade", "upgrade_plan") or any(k in low for k in ("upgrade", "rehausser", "passer à", "changer pour")):
-            if "100" in low or "75" in low:
-                selected_mob = all_mobility[3]  # Unlimited 5G+ 100GB ($75.00)
-            elif "50" in low or "65" in low:
-                selected_mob = all_mobility[2]  # Unlimited 5G 50GB ($65.00)
-            elif "25" in low or "45" in low:
-                selected_mob = all_mobility[1]  # Essential 5G 25GB ($45.00)
-            else:
-                selected_mob = all_mobility[2]  # Default to mid-tier 50GB
+        is_upgrade_action = (
+            clean_action in ("upgrade", "upgrade_plan")
+            or (
+                clean_action not in ("search_plans", "browse", "catalog", "view_plans", "list_plans")
+                and any(k in low for k in ("upgrade", "rehausser", "passer à", "changer pour"))
+            )
+        )
+        if is_upgrade_action:
+            # Deterministic plan matching by plan_id, name, data allowance, and price
+            selected_mob = None
+            for p in all_mobility:
+                if (
+                    p["plan_id"].lower() in low
+                    or p["name"].lower() in low
+                    or (p["data_gb"] > 0 and re.search(rf"\b{p['data_gb']}\s*gb\b", low))
+                ):
+                    selected_mob = p
+                    break
+            if selected_mob is None:
+                if any(k in low for k in ("100", "75", "unlimited", "illimité")):
+                    selected_mob = all_mobility[4]  # MOB-75: Unlimited 5G+ 100GB ($75.00)
+                elif any(k in low for k in ("50", "55", "plus")):
+                    selected_mob = all_mobility[3]  # MOB-55: Plus 5G 50GB ($55.00)
+                elif any(k in low for k in ("30", "45", "everyday", "quotidien")):
+                    selected_mob = all_mobility[2]  # MOB-45: Everyday 5G 30GB ($45.00)
+                elif any(k in low for k in ("15", "35", "basic", "de base")):
+                    selected_mob = all_mobility[1]  # MOB-35: Basic 15GB 4G ($35.00)
+                elif any(k in low for k in ("25", "starter", "de départ")) or re.search(r"\b1\b", low):
+                    selected_mob = all_mobility[0]  # MOB-25: Starter Talk & Text 1GB ($25.00)
+                else:
+                    selected_mob = all_mobility[2]  # Default to mid-tier MOB-45 ($45.00)
 
             return ok_reply(
                 {
                     "plan_name": selected_mob["name"],
+                    "plan_id": selected_mob["plan_id"],
                     "monthly_rate": selected_mob["monthly_rate"],
                     "rate_display": selected_mob["rate_display"],
                     "data_gb": selected_mob["data_gb"],
@@ -2180,7 +2222,8 @@ def submit_request_impl(  # pragma: no cover
                 )
             curated = matched[-3:] if len(matched) >= 3 else matched
         else:
-            curated = all_mobility[1:4]
+            # Curate top 3 modern 5G tiers (MOB-45 30GB, MOB-55 50GB, MOB-75 100GB)
+            curated = all_mobility[-3:]
 
         roaming_addons = [
             {"name": "Roam Better - US", "daily_rate": 12.0, "rate_display": "12.00"},

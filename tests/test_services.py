@@ -278,7 +278,7 @@ def test_telco_domain_actions_and_edge_cases() -> None:
     # 1. Outage checks (no login required)
     out_a = submit_request_impl("Any outages?", action="outage_check", postal_code="K1A 0B1", state={})
     assert out_a["status"] == "ok" and out_a["data"]["region"] == "Region-A"
-    out_b = submit_request_impl("Any outages?", action="outage_check", postal_code="K2A 0B1", state={})
+    out_b = submit_request_impl("Any outages?", action="outage_check", postal_code="K2A 1B1", state={})
     assert out_b["status"] == "ok" and out_b["data"]["region"] == "Region-B"
 
     # 2. Password reset (identified only)
@@ -587,13 +587,13 @@ def test_french_mfa_action_aliases_and_localization() -> None:
     assert res_dis["status"] == "ok"
     assert res_dis["data"]["mfa_enabled"] is False
     assert res_dis["data"]["status"] == "désactivé"
-    assert res_dis["spoken_summary"] == "MFA désactivé."
+    assert res_dis["spoken_summary"] == "Authentification multifacteur désactivée."
 
     res_en = submit_request_impl(summary="Activer mon authentification", action="activer_mfa", state=st, language="fr-CA")
     assert res_en["status"] == "ok"
     assert res_en["data"]["mfa_enabled"] is True
     assert res_en["data"]["status"] == "activé"
-    assert res_en["spoken_summary"] == "MFA activé."
+    assert res_en["spoken_summary"] == "Authentification multifacteur activée."
 
 
 def test_dispute_over_limit_and_handoff_prefix() -> None:
@@ -650,6 +650,67 @@ def test_warranty_negation_aware_damage_check() -> None:
     )
     assert res_err["status"] == "error"
     assert res_err["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
+
+
+def test_mobility_plan_upgrade_exact_tier_matching() -> None:
+    state = {"logged_in": True, "language": "en-US"}
+    res = submit_request_impl(
+        "I would like to upgrade to the 50GB Plus plan for 55 dollars",
+        action="upgrade",
+        state=state,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["plan_id"] == "MOB-55"
+    assert res["data"]["monthly_rate"] == 55.0
+
+    res75 = submit_request_impl(
+        "Upgrade my mobile plan to Unlimited 100GB",
+        action="upgrade",
+        state=state,
+    )
+    assert res75["status"] == "ok"
+    assert res75["data"]["plan_id"] == "MOB-75"
+    assert res75["data"]["monthly_rate"] == 75.0
+
+
+def test_mobility_plan_catalog_browsing_without_upgrade_hijacking() -> None:
+    state = {"logged_in": True, "language": "en-US"}
+    res = submit_request_impl(
+        "Search mobile upgrade plans",
+        action="search_plans",
+        service_type="mobility",
+        state=state,
+    )
+    assert res["status"] == "ok"
+    assert "plans" in res["data"]
+    plan_ids = [p["plan_id"] for p in res["data"]["plans"]]
+    assert "MOB-75" in plan_ids
+    assert "MOB-55" in plan_ids
+    assert "MOB-45" in plan_ids
+
+
+def test_warranty_speaker_crackles_passes() -> None:
+    state = {"logged_in": True, "language": "en-US"}
+    res = submit_request_impl(
+        "Speaker crackles on voice calls, no physical damage",
+        action="warranty",
+        state=state,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["warranty_submitted"] is True
+
+
+def test_french_outage_localization() -> None:
+    state = {"logged_in": True, "language": "fr-CA"}
+    res = submit_request_impl(
+        "Vérifier état de panne",
+        action="outage_check",
+        postal_code="K1A 0B1",
+        state=state,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["outage_active"] is True
+    assert "fibre optique" in res["data"]["cause"].lower()
 
 
 

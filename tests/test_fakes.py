@@ -4,12 +4,12 @@ from lib.fakes import (
     find_account,
     login_code_accepted,
     normalize_identifier,
-    normalize_identifier,
     normalize_code,
     only_digits,
     read_count,
     relative_date,
     resolve_locale,
+    resolve_postal_code_region,
     secret_pin_accepted,
     spoken_line,
 )
@@ -93,8 +93,9 @@ def test_login_ladder_for_codes_and_secret_pins() -> None:
 
 
 def test_login_ladder_extended_invariants() -> None:
-    expected_wrong = {"0000", "000000", "1111", "111111", "9999", "999999", "8888"}
+    expected_wrong = {"0000", "000000", "1111", "111111", "2222", "8888", "9999", "999999"}
     assert expected_wrong == ALWAYS_WRONG_LOGIN_CODES
+    assert len(ALWAYS_WRONG_LOGIN_CODES) <= 8
     for c in expected_wrong:
         assert not login_code_accepted(c, attempts=0)
         assert not secret_pin_accepted(c, attempts=0)
@@ -106,4 +107,13 @@ def test_login_ladder_extended_invariants() -> None:
     # Secret PIN 3rd attempt lockout
     assert secret_pin_accepted("5903", attempts=2) is False
     assert secret_pin_accepted("5678", attempts=2) is False
+
+
+def test_resolve_postal_code_region_generic_sectors() -> None:
+    # Even sector digit (index 3) -> Region-A (active outage)
+    assert resolve_postal_code_region("K1A 0B1") == "Region-A"
+    assert resolve_postal_code_region("A1A 0B1") == "Region-A"
+    # Odd sector digit (index 3) -> Region-B (normal operation)
+    assert resolve_postal_code_region("K1A 1B1") == "Region-B"
+    assert resolve_postal_code_region("A1A 1B1") == "Region-B"
 
