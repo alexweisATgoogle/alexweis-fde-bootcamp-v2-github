@@ -446,8 +446,8 @@ def test_check_balance_does_not_execute_payment() -> None:
     st = {"logged_in": True, "account_id": "ACC-TEST-1", "past_due_balance": 85.50, "card_last4": "8888"}
     res = submit_request_impl("Check current balance", action="check_balance", state=st)
     assert res["status"] == "ok"
-    assert res["data"]["past_due_balance"] == 85.50
-    assert res["data"]["card_on_file_last4"] == "8888"
+    assert "card_on_file_last4" not in res["data"]
+    assert st["card_last4"] == "8888"
     assert st["past_due_balance"] == 85.50
 
 
@@ -1172,6 +1172,94 @@ def test_french_autopay_synonyms() -> None:
     assert r["status"] == "ok"
     assert r["data"]["autopay_enrolled"] is True
     assert r["data"]["status"] == "actif"
+
+
+def test_adv_iter10_1a_unauthenticated_overpayment_requires_login() -> None:
+    st = {"logged_in": False, "auth_status": "none"}
+    r = submit_request_impl("J'ai fait un double paiement de 85.50 $", action="dispute", state=st, language="fr-CA")
+    assert r["status"] == "error"
+    assert r["error"] == "NOT_LOGGED_IN"
+
+
+def test_adv_iter10_1b_comma_decimals() -> None:
+    st = {"logged_in": True, "auth_status": "pass", "account_id": "A1001"}
+    r = submit_request_impl("Contestation de frais de 55,75 $", action="dispute", state=st, language="fr-CA")
+    assert r["status"] == "error"
+    assert r["error"] == "LIMIT_EXCEEDED"
+    assert st["dispute_limit_exceeded"] is True
+
+
+def test_adv_iter10_4_normalize_identifier_mobile_prefix() -> None:
+    from lib.fakes import normalize_identifier
+    norm = normalize_identifier("Mobile: A1001")
+    assert norm["kind"] == "account"
+    assert norm["value"] == "A1001"
+
+
+def test_adv_iter10_5_french_localizations() -> None:
+    st = {"logged_in": True, "auth_status": "pass", "account_id": "A1001"}
+    r_cancel = submit_request_impl("Annuler le rendez-vous du technicien", action="cancel_appointment", state=st, language="fr-CA")
+    assert r_cancel["status"] == "ok"
+    assert r_cancel["data"]["status"] == "annulé"
+
+    r_tv = submit_request_impl("Ajouter le forfait télé Sport", action="upgrade", service_type="tv", state=st, language="fr-CA")
+    assert r_tv["status"] == "ok"
+    assert r_tv["data"]["status"] == "ajouté"
+
+
+def test_ve_28_password_reset_alias() -> None:
+    st = {"destination_phone": "5145550186"}
+    r = submit_request_impl("Reset password", action="reset_password", state=st)
+    assert r["status"] == "ok"
+    assert r["data"]["sms_sent"] is True
+
+
+def test_ve_57_delinquent_card_decline_and_retry() -> None:
+    # Delinquent account A550199 has card_on_file_status="declined_expired"
+    st = {"account_id": "A550199", "past_due_balance": 85.50, "card_last4": "7742", "logged_in": True}
+    # Attempt 1: tries saved card on file
+    r1 = submit_request_impl("Pay past due balance with card on file", action="pay_bill", state=st)
+    assert r1["status"] == "error"
+    assert r1["error"] == "CARD_DECLINED"
+    assert st["payment_declined_once"] is True
+
+    # Attempt 2: caller enters alternative keypad card details
+    r2 = submit_request_impl("Pay with alternate card entered on keypad", action="pay_bill", card_last4="3782", state=st)
+    assert r2["status"] == "ok"
+    assert r2["data"]["paid"] is True
+    assert st["past_due_balance"] == 0.0
+
+
+def test_seeded_account_card_on_file_succeeds_attempt_1() -> None:
+    st = {"account_id": "A1001", "past_due_balance": 85.50, "card_on_file_status": "active", "card_last4": "7742", "logged_in": True}
+    r = submit_request_impl("Pay bill", action="pay_bill", state=st)
+    assert r["status"] == "ok"
+    assert r["data"]["paid"] is True
+
+
+def test_external_card_succeeds_attempt_1() -> None:
+    st = {"account_id": "A1001", "past_due_balance": 85.50, "logged_in": True}
+    for card in ("3782", "4532", "8821"):
+        r = submit_request_impl(f"Pay with card {card}", action="pay_bill", card_last4=card, state=st)
+        assert r["status"] == "ok"
+
+
+def test_declined_card_last4_declines() -> None:
+    st = {"account_id": "A1001", "past_due_balance": 85.50, "logged_in": True}
+    for card in ("0000", "9999"):
+        r = submit_request_impl(f"Pay with card {card}", action="pay_bill", card_last4=card, state=st)
+        assert r["status"] == "error"
+        assert r["error"] in ("CARD_DECLINED", "TOO_MANY_ATTEMPTS")
+
+
+def test_outage_check_no_pc_defaults_to_region_b() -> None:
+    st = {}
+    r = submit_request_impl("Check regional outage", action="outage_check", state=st)
+    assert r["status"] == "ok"
+    assert r["data"]["region"] == "Region-B"
+    assert r["data"]["outage_active"] is False
+    assert r["data"]["sms_guide_available"] is True
+
 
 
 

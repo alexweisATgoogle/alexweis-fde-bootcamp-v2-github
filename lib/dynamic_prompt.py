@@ -88,9 +88,9 @@ _DP_ITALIAN_MARKERS: frozenset[str] = frozenset({
 })
 
 _DP_EXPLICIT_SWITCH_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("fr-CA", ("en français", "en francais", "parlez-vous français", "parlez vous francais", "in french", "speak french", "french please", "switch to french")),
+    ("fr-CA", ("en français", "en francais", "parlez-vous français", "parlez vous francais", "in french", "speak french", "french please", "switch to french", "2 pour le français", "2 pour le francais", "pour le français appuyez sur le 2", "appuyez sur le 2", "2 for french", "press 2 for french")),
     ("es-US", ("en español", "en espanol", "habla español", "habla espanol", "in spanish", "speak spanish", "spanish please", "switch to spanish")),
-    ("en-US", ("in english", "speak english", "english please", "switch to english")),
+    ("en-US", ("in english", "speak english", "english please", "switch to english", "1 for english", "press 1 for english")),
     ("de-DE", ("auf deutsch", "sprechen sie deutsch", "in german", "speak german", "german please", "switch to german")),
     ("it-IT", ("in italiano", "parla italiano", "in italian", "speak italian", "italian please", "switch to italian")),
     ("pt-BR", ("em português", "em portugues", "fala português", "fala portugues", "in portuguese", "speak portuguese", "portuguese please", "switch to portuguese")),
@@ -205,16 +205,21 @@ def _dp_match_explicit_switch(low: str) -> str:
 
 def detect_utterance_language(utterance: str, current_language: str = "en-US") -> str:
     """Detect language from an utterance with contextual inertia on silence and numbers."""
-    cleaned = re.sub(r"\\[(?:pause|silence)\\]", " ", str(utterance or ""), flags=re.IGNORECASE)
-    cleaned = re.sub(r"[0-9\W_]+", " ", cleaned).strip()
-    if not cleaned:
-        return resolve_locale(current_language)
-
     low = str(utterance or "").lower()
 
     explicit_switch = _dp_match_explicit_switch(low)
     if explicit_switch:
         return explicit_switch
+
+    # Turn-1 standalone DTMF 2 / deux when current_language is en-US
+    if resolve_locale(current_language) == "en-US":
+        if re.fullmatch(r"\[?\s*(?:dtmf\s*[:=]?\s*|keypad\s*[:=]?\s*|saisie\s+au\s+clavier\s*[:=]?\s*)?(?:2|deux)\s*\]?\.?", low.strip()):
+            return "fr-CA"
+
+    cleaned = re.sub(r"\\[(?:pause|silence)\\]", " ", str(utterance or ""), flags=re.IGNORECASE)
+    cleaned = re.sub(r"[0-9\W_]+", " ", cleaned).strip()
+    if not cleaned:
+        return resolve_locale(current_language)
 
     words = [w.lower() for w in cleaned.split()]
 

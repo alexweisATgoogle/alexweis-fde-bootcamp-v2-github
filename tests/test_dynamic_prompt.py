@@ -244,3 +244,22 @@ def test_apply_language_prompt_filter_variations() -> None:
 
     apply_language_prompt_filter(context, SimpleNamespace(config=None))
     apply_language_prompt_filter(context, SimpleNamespace(config=SimpleNamespace(system_instruction=None)))
+
+
+def test_dtmf_2_selects_french_turn_1() -> None:
+    assert detect_utterance_language("2", current_language="en-US") == "fr-CA"
+    assert detect_utterance_language("[DTMF 2]", current_language="en-US") == "fr-CA"
+    assert detect_utterance_language("deux", current_language="en-US") == "fr-CA"
+    assert detect_utterance_language("[keypad: 2]", current_language="en-US") == "fr-CA"
+    # English sentences containing 2 do NOT flip to French
+    assert detect_utterance_language("down for 2 days", current_language="en-US") == "en-US"
+    assert detect_utterance_language("I have 2 lines", current_language="en-US") == "en-US"
+
+
+def test_dtmf_1_does_not_break_french() -> None:
+    # A French call receiving keypad 1 or menu 1 stays in French
+    assert detect_utterance_language("1", current_language="fr-CA") == "fr-CA"
+    assert detect_utterance_language("[DTMF 1]", current_language="fr-CA") == "fr-CA"
+    # Spoken switch to English still works
+    assert detect_utterance_language("in English please", current_language="fr-CA") == "en-US"
+

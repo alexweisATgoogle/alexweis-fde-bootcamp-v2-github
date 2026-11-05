@@ -95,36 +95,61 @@ def enforce_handover_utterance(
     if not isinstance(session_params, dict):
         return text
 
+    is_threshold = bool(session_params.get("dispute_limit_exceeded")) or (
+        str(session_params.get("handoff_reason") or "") in ("refund_threshold_exceeded", "dispute_limit_exceeded")
+    )
     is_handover = bool(
         session_params.get("handover_complete")
-        or session_params.get("dispute_limit_exceeded")
-        or session_params.get("handoff_reason") == "refund_threshold_exceeded"
+        or is_threshold
     )
     if not is_handover:
         return text
 
+    lang = str(session_params.get("language") or "")
+    explanation_sent = (
+        "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste."
+        if lang.startswith("fr")
+        else "Disputes exceeding the automated limit require review by a specialist."
+    )
+    transfer_sent = spoken_line("transfer_to_specialist", lang)
+
+    if is_threshold:
+        if not clean_text:
+            return f"{explanation_sent} {transfer_sent}"
+
+        low = clean_text.lower()
+        has_explanation = (
+            "exceeding the automated limit" in low
+            or "dépassant la limite automatisée" in low
+            or "depassant la limite automatisee" in low
+        )
+        has_transfer = any(
+            w in low
+            for w in (
+                "transfer",
+                "transfèr",
+                "transfér",
+                "connect",
+                "billing specialist",
+                "specialist now",
+                "spécialiste de la facturation",
+                "specialiste de la facturation",
+                "spécialiste maintenant",
+                "specialiste maintenant",
+            )
+        )
+
+        if not has_explanation and not has_transfer:
+            return f"{explanation_sent} {transfer_sent}"
+        if not has_explanation and has_transfer:
+            return f"{explanation_sent} {clean_text}"
+        if has_explanation and not has_transfer:
+            return f"{clean_text.rstrip()} {transfer_sent}"
+        return clean_text
+
     handoff_msg = str(session_params.get("handoff_message") or "").strip()
     if not clean_text:
         return handoff_msg or text
-
-    # Over-threshold refund/dispute 2-sentence guarantee
-    is_threshold = bool(session_params.get("dispute_limit_exceeded")) or (
-        session_params.get("handoff_reason") == "refund_threshold_exceeded"
-    )
-    if is_threshold:
-        low = clean_text.lower()
-        if (
-            "exceeding the automated limit" not in low
-            and "dépassant la limite automatisée" not in low
-            and "depassant la limite automatisee" not in low
-        ):
-            lang = str(session_params.get("language") or "")
-            prefix = (
-                "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. "
-                if lang.startswith("fr")
-                else "Disputes exceeding the automated limit require review by a specialist. "
-            )
-            return prefix + clean_text
 
     return text
 

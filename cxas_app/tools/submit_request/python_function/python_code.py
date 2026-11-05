@@ -557,6 +557,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "suspension_reason": "",
         "preferred_language": "en-US",
         k_card_last4: "7742",
+        "card_on_file_status": "active",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 85.50,
@@ -584,6 +585,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "fr-CA",
         k_card_last4: "8853",
+        "card_on_file_status": "active",
         "business_flag": False,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -603,6 +605,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "en-US",
         k_card_last4: "4421",
+        "card_on_file_status": "active",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 0.0,
@@ -622,6 +625,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "en-US",
         k_card_last4: "1122",
+        "card_on_file_status": "active",
         "business_flag": True,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -760,6 +764,8 @@ def display_amount(value: Any) -> str:  # pragma: no cover
 
 BLOCKED_CALLER_NUMBERS: frozenset[str] = frozenset({"9005550199"})  # pragma: no cover
 
+_SYNTHESIZED_ACCOUNTS: dict[str, dict[str, Any]] = {}  # pragma: no cover
+
 def normalize_code(value: Any) -> str:  # pragma: no cover
     """Coerce ints, floats (e.g. 5903.0), and formatted strings into a clean digit string."""
     if value is None or isinstance(value, bool):
@@ -787,9 +793,9 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     s = str(raw or "").strip()
     if not s:
         return {"kind": "unknown", "value": ""}
-    # adv_iter8_4: strip label prefixes before alphanumeric reference matching
+    # adv_iter8_4 & adv_iter10_4: strip label prefixes before alphanumeric reference matching
     s = re.sub(
-        r"^(?:phone|tel|telephone|numéro|numero|téléphone|mobile|cell(?:ulaire)?)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*(?:[:#=]|\s+)\s*",
+        r"^(?:account(?:\s*number|\s*#)?|acct(?:\s*#)?|compte(?:\s*de\s*t[eé]l[eé]phone)?|num[eé]ro(?:\s*de\s*compte)?|phone(?:\s*number)?|mobile|cell|cellulaire|ligne|t[eé]l[eé]phone|mon\s*num[eé]ro(?:\s*est)?|it(?:'s|\s+is))\s*[:=]?\s*",
         "",
         s,
         flags=re.IGNORECASE,
@@ -822,6 +828,8 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
     if ref_match1:
         prefix, digits = ref_match1.groups()
+        if prefix.upper() == "A":
+            return {"kind": "account", "value": f"A{digits}"}
         if prefix.upper() in ("ACC", "ACCT"):
             return {"kind": "account", "value": f"ACC-{digits}"}
         return {"kind": "reference", "value": f"{prefix.upper()}-{digits}"}
@@ -839,6 +847,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     raw = raw_str.upper()
     if not raw:
         return None
+    if raw in _SYNTHESIZED_ACCOUNTS:
+        return dict(_SYNTHESIZED_ACCOUNTS[raw])
+    if raw_str in _SYNTHESIZED_ACCOUNTS:
+        return dict(_SYNTHESIZED_ACCOUNTS[raw_str])
     k_last4 = "phone_" + "last" + "4"
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
@@ -887,6 +899,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
+            "card_on_file_status": "declined_expired",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-A",
@@ -920,6 +933,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
+            "card_on_file_status": "declined_expired",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-A",
@@ -951,6 +965,8 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
+        if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
+            base["card_on_file_status"] = "declined_expired"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",
@@ -960,6 +976,9 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 "status": "cleared",
             }
         ]
+        _SYNTHESIZED_ACCOUNTS[ref_id] = base
+        _SYNTHESIZED_ACCOUNTS[raw_str] = base
+        _SYNTHESIZED_ACCOUNTS[raw] = base
         return base
     return None
 
@@ -1367,7 +1386,7 @@ def submit_request_impl(  # pragma: no cover
             pc_match = re.search(r"\b([A-Za-z]\d[A-Za-z](?:\s*\d[A-Za-z]\d)?)\b", clean_summary)
             if pc_match:
                 pc = pc_match.group(1)
-        region = resolve_postal_code_region(pc) if pc else str(state.get("region") or "Region-A")
+        region = resolve_postal_code_region(pc) if pc else str(state.get("region") or "Region-B")
         outage = OUTAGE_REGIONS.get(region, OUTAGE_REGIONS["Region-A"])
         outage_is_active = bool(outage["active"])
         res_data: dict[str, Any] = {
@@ -1412,7 +1431,7 @@ def submit_request_impl(  # pragma: no cover
         )
 
     # 2. Password Reset (M7) — Identified only, does not require login
-    if clean_action == "password_reset" or any(k in low for k in ("password", "mot de passe", "reinitialiser", "réinitialiser")):
+    if clean_action in ("password_reset", "reset_password") or any(k in low for k in ("password", "mot de passe", "reinitialiser", "réinitialiser")):
         p_target = str(destination_phone or state.get("destination_phone") or state.get("caller_provided_phone_last4") or state.get("phone_last4") or "0186")
         p_last4 = p_target[-4:]
         return ok_reply(
@@ -1434,8 +1453,15 @@ def submit_request_impl(  # pragma: no cover
     elif state.get("logged_in") is False and state.get("auth_status") != "locked":
         state["auth_status"] = "none"
 
+    is_overpayment = any(
+        k in low
+        for k in (
+            "double", "overpay", "trop-paye", "trop-payé", "trop percu", "trop perçu",
+            "paid twice", "payé deux fois", "paye deux fois",
+        )
+    )
     is_large_dispute = False
-    if clean_action == "dispute" or any(k in low for k in ("dispute", "conteste", "refund", "remboursement")):
+    if (clean_action == "dispute" or any(k in low for k in ("dispute", "conteste", "refund", "remboursement"))) and not is_overpayment:
         try:
             d_amt = float(amount) if amount else 0.0
         except (ValueError, TypeError):
@@ -1443,7 +1469,8 @@ def submit_request_impl(  # pragma: no cover
         if not math.isfinite(d_amt):
             d_amt = 0.0
         if d_amt <= 0.0:
-            m_amt = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
+            clean_summary_norm = clean_summary.replace(",", ".")
+            m_amt = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary_norm)
             if m_amt:
                 try:
                     f_amt = float(m_amt.group(1))
@@ -1629,8 +1656,9 @@ def submit_request_impl(  # pragma: no cover
                     language=lang,
                     data={"status": "en_route", "can_cancel": False},
                 )
+            status_val = "annulé" if lang.startswith("fr") else "cancelled"
             return ok_reply(
-                {"appointment_cancelled": True, "status": "cancelled"},
+                {"appointment_cancelled": True, "status": status_val},
                 reference,
                 language=lang,
                 spoken_summary="Rendez-vous annulé." if lang.startswith("fr") else "Appointment cancelled.",
@@ -1773,6 +1801,7 @@ def submit_request_impl(  # pragma: no cover
         plan_amount = round((current_bal - late_fee) / 1.15, 2) if current_bal > 0 else 0.0
         taxes_and_fees = round(current_bal - late_fee - plan_amount, 2) if current_bal > 0 else 0.0
         card_on_file = str(state.get("card_last4") or (account.get("card_last4") if account else "7742") or "7742")
+        state["card_last4"] = card_on_file
         if is_credit:
             status_val = "solde_crediteur" if lang.startswith("fr") else "credit_balance"
         else:
@@ -1788,7 +1817,6 @@ def submit_request_impl(  # pragma: no cover
                 "credit_balance": credit_bal,
                 "credit_balance_display": display_amount(credit_bal),
                 "due_date": relative_date(7),
-                "card_on_file_last4": card_on_file,
                 "status": status_val,
                 "plan_amount": plan_amount,
                 "plan_amount_display": display_amount(plan_amount),
@@ -1877,8 +1905,40 @@ def submit_request_impl(  # pragma: no cover
             c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_card_text)
             if c_match:
                 c_digits = c_match.group(1)
+        is_saved_card = (
+            not c_digits
+            or c_digits in (str(state.get("card_last4") or ""), "7742")
+            or any(k in low for k in ("card on file", "saved card", "primary card", "primary", "carte enregistrée", "carte enregistree", "carte au dossier"))
+        )
         if not c_digits:
             c_digits = str(state.get("card_last4") or "")
+
+        # Authentic delinquent account saved card on file decline on Attempt 1
+        acc_id = str(state.get("account_id") or "")
+        account_obj = find_account(acc_id) if acc_id else None
+        card_on_file_status = str(account_obj.get("card_on_file_status", "active") if account_obj else "active")
+        if is_saved_card and not state.get("payment_declined_once") and card_on_file_status == "declined_expired":
+            state["payment_declined_once"] = True
+            dec_last4 = c_digits[-4:] if len(c_digits) >= 4 else "7742"
+            state["declined_card_last4"] = dec_last4
+            if lang.startswith("fr"):
+                return error_reply(
+                    "CARD_DECLINED",
+                    message=spoken_line("card_declined", lang),
+                    agent_action="Demander à l'appelant de fournir une autre carte de paiement via le clavier.",
+                    reference=reference,
+                    language=lang,
+                    data={"card_declined": True, "attempts_remaining": 2, "declined_card_last4": dec_last4},
+                )
+            return error_reply(
+                "CARD_DECLINED",
+                message=spoken_line("card_declined", lang),
+                agent_action="Ask caller to provide an alternate payment card via keypad.",
+                reference=reference,
+                language=lang,
+                data={"card_declined": True, "attempts_remaining": 2, "declined_card_last4": dec_last4},
+            )
+
         if not c_digits and state.get("payment_declined_once"):
             if any(k in low for k in ("keypad", "keyed", "card", "clavier", "carte", "enter", "entré", "entre", "composé", "compose", "chiffre", "digit", "fourni", "second", "autre")):
                 dec = str(state.get("declined_card_last4") or "")
@@ -2089,7 +2149,8 @@ def submit_request_impl(  # pragma: no cover
         )
 
         if dispute_amt <= 0.0:
-            amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_for_amt)
+            clean_for_amt_norm = clean_for_amt.replace(",", ".")
+            amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_for_amt_norm)
             if amt_match:
                 try:
                     f_amt = float(amt_match.group(1))
@@ -2113,7 +2174,6 @@ def submit_request_impl(  # pragma: no cover
                     "days": refund_days,
                     "days_display": str(refund_days),
                     "adjustment_type": "remboursement_trop_percu" if lang.startswith("fr") else "overpayment_refund",
-                    "refund_destination": "crédit sur le prochain relevé" if lang.startswith("fr") else "statement_credit",
                     "status_code": "approuve" if lang.startswith("fr") else "approved",
                 },
                 reference,
@@ -2359,7 +2419,7 @@ def submit_request_impl(  # pragma: no cover
                     "channels": pkg["channels"],
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
-                    "status": "added" if is_tv_order else "available",
+                    "status": ("ajouté" if is_tv_order else "disponible") if lang.startswith("fr") else ("added" if is_tv_order else "available"),
                     "tax_rate_percent": tax_rate,
                     "estimated_tax": tax_amt,
                     "estimated_tax_display": display_amount(tax_amt),
@@ -2426,7 +2486,7 @@ def submit_request_impl(  # pragma: no cover
                         "activation_fee": 0.0,
                         "activation_fee_display": "0.00",
                         "upgrade_confirmed": True,
-                        "status": "active",
+                        "status": "actif" if lang.startswith("fr") else "active",
                     },
                     reference,
                     language=lang,
@@ -2524,7 +2584,7 @@ def submit_request_impl(  # pragma: no cover
                     "effective_timing": "immédiatement" if lang.startswith("fr") else "immediately",
                     "taxes_note": "taxes applicables en sus" if lang.startswith("fr") else "plus applicable taxes",
                     "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
-                    "status": "active",
+                    "status": "actif" if lang.startswith("fr") else "active",
                 },
                 reference,
                 language=lang,

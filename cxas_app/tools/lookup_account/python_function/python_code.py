@@ -52,6 +52,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "suspension_reason": "",
         "preferred_language": "en-US",
         k_card_last4: "7742",
+        "card_on_file_status": "active",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 85.50,
@@ -79,6 +80,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "fr-CA",
         k_card_last4: "8853",
+        "card_on_file_status": "active",
         "business_flag": False,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -98,6 +100,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "en-US",
         k_card_last4: "4421",
+        "card_on_file_status": "active",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 0.0,
@@ -117,6 +120,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "preferred_language": "en-US",
         k_card_last4: "1122",
+        "card_on_file_status": "active",
         "business_flag": True,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -465,6 +469,8 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
 
     return resolve_copy_locale(None)
 
+_SYNTHESIZED_ACCOUNTS: dict[str, dict[str, Any]] = {}  # pragma: no cover
+
 def normalize_code(value: Any) -> str:  # pragma: no cover
     """Coerce ints, floats (e.g. 5903.0), and formatted strings into a clean digit string."""
     if value is None or isinstance(value, bool):
@@ -492,9 +498,9 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     s = str(raw or "").strip()
     if not s:
         return {"kind": "unknown", "value": ""}
-    # adv_iter8_4: strip label prefixes before alphanumeric reference matching
+    # adv_iter8_4 & adv_iter10_4: strip label prefixes before alphanumeric reference matching
     s = re.sub(
-        r"^(?:phone|tel|telephone|numéro|numero|téléphone|mobile|cell(?:ulaire)?)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*(?:[:#=]|\s+)\s*",
+        r"^(?:account(?:\s*number|\s*#)?|acct(?:\s*#)?|compte(?:\s*de\s*t[eé]l[eé]phone)?|num[eé]ro(?:\s*de\s*compte)?|phone(?:\s*number)?|mobile|cell|cellulaire|ligne|t[eé]l[eé]phone|mon\s*num[eé]ro(?:\s*est)?|it(?:'s|\s+is))\s*[:=]?\s*",
         "",
         s,
         flags=re.IGNORECASE,
@@ -527,6 +533,8 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
     if ref_match1:
         prefix, digits = ref_match1.groups()
+        if prefix.upper() == "A":
+            return {"kind": "account", "value": f"A{digits}"}
         if prefix.upper() in ("ACC", "ACCT"):
             return {"kind": "account", "value": f"ACC-{digits}"}
         return {"kind": "reference", "value": f"{prefix.upper()}-{digits}"}
@@ -544,6 +552,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     raw = raw_str.upper()
     if not raw:
         return None
+    if raw in _SYNTHESIZED_ACCOUNTS:
+        return dict(_SYNTHESIZED_ACCOUNTS[raw])
+    if raw_str in _SYNTHESIZED_ACCOUNTS:
+        return dict(_SYNTHESIZED_ACCOUNTS[raw_str])
     k_last4 = "phone_" + "last" + "4"
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
@@ -592,6 +604,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
+            "card_on_file_status": "declined_expired",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-A",
@@ -625,6 +638,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
+            "card_on_file_status": "declined_expired",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-A",
@@ -656,6 +670,8 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
+        if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
+            base["card_on_file_status"] = "declined_expired"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",
@@ -665,6 +681,9 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 "status": "cleared",
             }
         ]
+        _SYNTHESIZED_ACCOUNTS[ref_id] = base
+        _SYNTHESIZED_ACCOUNTS[raw_str] = base
+        _SYNTHESIZED_ACCOUNTS[raw] = base
         return base
     return None
 

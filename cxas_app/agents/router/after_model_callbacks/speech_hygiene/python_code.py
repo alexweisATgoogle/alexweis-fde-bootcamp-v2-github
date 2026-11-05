@@ -49,6 +49,22 @@ def after_model_callback(
         if handover_lang:
             effective_state["language"] = handover_lang
 
+    # Sanitize end_session reason on French sessions
+    is_french_session = (
+        str(state_dict.get("language") or "").startswith("fr")
+        or str(state_dict.get("locked_language") or "").startswith("fr")
+        or handover_lang.startswith("fr")
+    )
+    for part in parts:
+        fc = getattr(part, "function_call", None)
+        if fc is not None and getattr(fc, "name", "") == "end_session":
+            fc_args = getattr(fc, "args", None)
+            if isinstance(fc_args, dict) and is_french_session:
+                curr_reason = str(fc_args.get("reason") or "").strip().lower()
+                if curr_reason in ("resolved", "complete", "completed", "resolution", "done", "resolu", ""):
+                    fc_args["reason"] = "résolu"
+                    changed = True
+
     for part in parts:
         text = getattr(part, "text", None)
         if not isinstance(text, str) or not text.strip():
@@ -145,54 +161,6 @@ def clean_agent_speech(  # pragma: no cover
 
         cleaned = _LAST4_CONTEXT_RE.sub(_replace_non_card_last4, cleaned)
     return cleaned
-
-def enforce_handover_utterance(  # pragma: no cover
-    text: str,
-    session_params: dict[str, Any] | None = None,
-) -> str:
-    """Ensure handover turns contain required disclosures; fill empty replies.
-
-    After handover_to_person ran (or during an over-threshold dispute escalation),
-    an empty reply receives the localized handoff_message. If the model spoke a
-    partial reply missing the required explanation sentence on an over-threshold
-    dispute, prepend the explanation sentence to ensure both sentences are spoken.
-    """
-    clean_text = (text or "").strip()
-    if not isinstance(session_params, dict):
-        return text
-
-    is_handover = bool(
-        session_params.get("handover_complete")
-        or session_params.get("dispute_limit_exceeded")
-        or session_params.get("handoff_reason") == "refund_threshold_exceeded"
-    )
-    if not is_handover:
-        return text
-
-    handoff_msg = str(session_params.get("handoff_message") or "").strip()
-    if not clean_text:
-        return handoff_msg or text
-
-    # Over-threshold refund/dispute 2-sentence guarantee
-    is_threshold = bool(session_params.get("dispute_limit_exceeded")) or (
-        session_params.get("handoff_reason") == "refund_threshold_exceeded"
-    )
-    if is_threshold:
-        low = clean_text.lower()
-        if (
-            "exceeding the automated limit" not in low
-            and "dépassant la limite automatisée" not in low
-            and "depassant la limite automatisee" not in low
-        ):
-            lang = str(session_params.get("language") or "")
-            prefix = (
-                "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. "
-                if lang.startswith("fr")
-                else "Disputes exceeding the automated limit require review by a specialist. "
-            )
-            return prefix + clean_text
-
-    return text
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {
@@ -344,6 +312,79 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
     for slot_name, slot_val in slots.items():
         template = template.replace(f"[{slot_name}]", str(slot_val)).replace(f"{{{slot_name}}}", str(slot_val))
     return template
+
+def enforce_handover_utterance(  # pragma: no cover
+    text: str,
+    session_params: dict[str, Any] | None = None,
+) -> str:
+    """Ensure handover turns contain required disclosures; fill empty replies.
+
+    After handover_to_person ran (or during an over-threshold dispute escalation),
+    an empty reply receives the localized handoff_message. If the model spoke a
+    partial reply missing the required explanation sentence on an over-threshold
+    dispute, prepend the explanation sentence to ensure both sentences are spoken.
+    """
+    clean_text = (text or "").strip()
+    if not isinstance(session_params, dict):
+        return text
+
+    is_threshold = bool(session_params.get("dispute_limit_exceeded")) or (
+        str(session_params.get("handoff_reason") or "") in ("refund_threshold_exceeded", "dispute_limit_exceeded")
+    )
+    is_handover = bool(
+        session_params.get("handover_complete")
+        or is_threshold
+    )
+    if not is_handover:
+        return text
+
+    lang = str(session_params.get("language") or "")
+    explanation_sent = (
+        "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste."
+        if lang.startswith("fr")
+        else "Disputes exceeding the automated limit require review by a specialist."
+    )
+    transfer_sent = spoken_line("transfer_to_specialist", lang)
+
+    if is_threshold:
+        if not clean_text:
+            return f"{explanation_sent} {transfer_sent}"
+
+        low = clean_text.lower()
+        has_explanation = (
+            "exceeding the automated limit" in low
+            or "dépassant la limite automatisée" in low
+            or "depassant la limite automatisee" in low
+        )
+        has_transfer = any(
+            w in low
+            for w in (
+                "transfer",
+                "transfèr",
+                "transfér",
+                "connect",
+                "billing specialist",
+                "specialist now",
+                "spécialiste de la facturation",
+                "specialiste de la facturation",
+                "spécialiste maintenant",
+                "specialiste maintenant",
+            )
+        )
+
+        if not has_explanation and not has_transfer:
+            return f"{explanation_sent} {transfer_sent}"
+        if not has_explanation and has_transfer:
+            return f"{explanation_sent} {clean_text}"
+        if has_explanation and not has_transfer:
+            return f"{clean_text.rstrip()} {transfer_sent}"
+        return clean_text
+
+    handoff_msg = str(session_params.get("handoff_message") or "").strip()
+    if not clean_text:
+        return handoff_msg or text
+
+    return text
 
 def resolve_handover_fallback(  # pragma: no cover
     reason: str = "",

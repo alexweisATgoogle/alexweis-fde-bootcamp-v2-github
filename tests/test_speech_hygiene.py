@@ -108,3 +108,18 @@ def test_adv_iter9_2_threshold_handover_2_sentence_guarantee(callback) -> None:
     out_full = callback.after_model_callback(SimpleNamespace(state=st_en), resp_full)
     assert resp_full.content.parts[0].text == full_text
 
+
+@pytest.mark.parametrize("callback", CALLBACKS)
+def test_sanitizes_end_session_reason_in_french(callback) -> None:
+    fc = SimpleNamespace(name="end_session", args={"reason": "resolved"})
+    resp = SimpleNamespace(
+        content=SimpleNamespace(
+            parts=[SimpleNamespace(text="Merci d'avoir appelé.", function_call=None), SimpleNamespace(text=None, function_call=fc)]
+        )
+    )
+    st = {"language": "fr-CA"}
+    res = callback.after_model_callback(SimpleNamespace(state=st), resp)
+    assert res is not None
+    assert fc.args["reason"] == "résolu"
+
+

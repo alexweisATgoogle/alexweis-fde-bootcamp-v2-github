@@ -57,3 +57,41 @@ def test_resolve_handover_fallback() -> None:
     assert "specialist" in resolve_handover_fallback("transfer_to_specialist", "en-US")
     assert "sécurité" in resolve_handover_fallback("auth_failure", "fr-CA")
 
+
+def test_enforce_handover_utterance_threshold_guarantee() -> None:
+    # 1. English empty text
+    st_en = {"dispute_limit_exceeded": True, "language": "en-US"}
+    res_empty_en = enforce_handover_utterance("", st_en)
+    assert "Disputes exceeding the automated limit require review by a specialist." in res_empty_en
+    assert "billing specialist now" in res_empty_en
+
+    # 2. French empty text
+    st_fr = {"dispute_limit_exceeded": True, "language": "fr-CA"}
+    res_empty_fr = enforce_handover_utterance("", st_fr)
+    assert "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste." in res_empty_fr
+    assert "spécialiste de la facturation maintenant" in res_empty_fr
+
+    # 3. S1-only input in English (appends S2)
+    s1_en = "Disputes exceeding the automated limit require review by a specialist."
+    res_s1_en = enforce_handover_utterance(s1_en, st_en)
+    assert res_s1_en.startswith(s1_en)
+    assert "billing specialist now" in res_s1_en
+
+    # 4. S2-only input in English (prepends S1)
+    s2_en = "I will transfer you to a billing specialist now."
+    res_s2_en = enforce_handover_utterance(s2_en, st_en)
+    assert "Disputes exceeding the automated limit require review by a specialist." in res_s2_en
+    assert res_s2_en.endswith(s2_en)
+
+    # 5. Full 2 sentences already present
+    full_en = f"{s1_en} {s2_en}"
+    assert enforce_handover_utterance(full_en, st_en) == full_en
+
+    # 6. Handover reason = refund_threshold_exceeded or dispute_limit_exceeded
+    st_reason = {"handoff_reason": "refund_threshold_exceeded", "language": "en-US"}
+    assert "Disputes exceeding the automated limit" in enforce_handover_utterance("", st_reason)
+
+    st_reason2 = {"handoff_reason": "dispute_limit_exceeded", "language": "fr-CA"}
+    assert "dépassant la limite automatisée" in enforce_handover_utterance("", st_reason2)
+
+
