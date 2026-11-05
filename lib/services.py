@@ -675,8 +675,8 @@ def check_secret_pin_impl(
         state.get("logged_in")
         or state.get("auth_status") == "pass"
         or state.get("step_up_active")
-        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "désactiver", "desactiver", "authentification", "security", "2fa", "multi-factor"))
-        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "désactiver", "desactiver", "authentification", "security", "2fa", "multi-factor"))
+        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
+        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
     )
     if is_step_up:
         state["step_up_active"] = True
@@ -984,6 +984,7 @@ def submit_request_impl(
             "affected_services": list(outage["affected_services"]),
             "cause": "Entretien de la ligne de distribution par fibre optique" if lang.startswith("fr") else outage["cause"],
         }
+        state["outage_announce_pending"] = bool(outage_is_active)
         if not outage_is_active:
             res_data["sms_guide_available"] = True
             res_data["steps"] = [
@@ -1006,7 +1007,7 @@ def submit_request_impl(
         return ok_reply(
             {
                 "notification_registered": True,
-                "status": "active",
+                "status": "actif" if lang.startswith("fr") else "active",
                 "phone_last4": p_target[-4:],
                 "channel": "sms",
                 "message": "Notification par texto activée pour le rétablissement de la panne." if lang.startswith("fr") else "Text notification registered for outage restoration.",
@@ -1413,6 +1414,9 @@ def submit_request_impl(
                 "late_fee_display": display_amount(late_fee),
                 "bank_autopay_discount": 5.0,
                 "bank_autopay_discount_display": "5.00",
+                "early_cancellation_fee": float(account.get("early_cancellation_fee", 150.00)) if account else 150.00,
+                "early_cancellation_fee_display": display_amount(float(account.get("early_cancellation_fee", 150.00)) if account else 150.00),
+                "contract_end_date": str(account.get("contract_end_date") or relative_date(180)) if account else relative_date(180),
             },
             reference,
             language=lang,
@@ -1494,9 +1498,41 @@ def submit_request_impl(
             c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_card_text)
             if c_match:
                 c_digits = c_match.group(1)
+        saved_last4 = str(state.get("card_last4") or "")
+        turn_haystack = f"{summary or ''} {state.get('last_user_utterance') or ''}".lower()
+        explicit_saved_phrases = (
+            "card on file",
+            "saved card",
+            "stored card",
+            "card on my account",
+            "primary card",
+            "default card",
+            "carte au dossier",
+            "carte à mon dossier",
+            "carte à dossier",
+            "carte enregistrée",
+            "carte enregistree",
+            "carte sauvegardée",
+        )
+        has_new_card_mention = any(
+            nk in turn_haystack
+            for nk in (
+                "new card",
+                "another card",
+                "alternate card",
+                "different card",
+                "other card",
+                "nouvelle carte",
+                "autre carte",
+            )
+        )
+        is_explicit_saved_mention = (
+            any(kw in turn_haystack for kw in explicit_saved_phrases)
+            and not has_new_card_mention
+            and not state.get("payment_declined_once")
+        )
         if c_digits:
-            saved_last4 = str(state.get("card_last4") or "")
-            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742")
+            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742") or is_explicit_saved_mention
         else:
             is_saved_card = True
         if not c_digits:
@@ -1999,23 +2035,27 @@ def submit_request_impl(
             tax_rate = 15.0
             tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
             total_with_tax = round(tv_rate + tax_amt, 2)
+            pkg_name_fr = "Forfait Sports" if pkg["package_id"] == "TV-SPORTS" else pkg["name"]
+            channels_fr = ["Sports 1-4", "Courses en direct", "Golf Central"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
+            res_dict = {
+                "package_id": pkg["package_id"],
+                "package_name": pkg_name_fr if lang.startswith("fr") else pkg["name"],
+                "monthly_rate": tv_rate,
+                "rate_display": pkg["rate_display"],
+                "channels": channels_fr if lang.startswith("fr") else pkg["channels"],
+                "activation_fee": 0.0,
+                "activation_fee_display": "0.00",
+                "status": ("ajouté" if is_tv_order else "disponible") if lang.startswith("fr") else ("added" if is_tv_order else "available"),
+                "tax_rate_percent": tax_rate,
+                "estimated_tax": tax_amt,
+                "estimated_tax_display": display_amount(tax_amt),
+                "estimated_monthly_with_tax": total_with_tax,
+                "estimated_monthly_with_tax_display": display_amount(total_with_tax),
+                "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
+            }
+            res_dict["plans"] = [dict(res_dict)]
             return ok_reply(
-                {
-                    "package_id": pkg["package_id"],
-                    "package_name": pkg["name"],
-                    "monthly_rate": tv_rate,
-                    "rate_display": pkg["rate_display"],
-                    "channels": pkg["channels"],
-                    "activation_fee": 0.0,
-                    "activation_fee_display": "0.00",
-                    "status": ("ajouté" if is_tv_order else "disponible") if lang.startswith("fr") else ("added" if is_tv_order else "available"),
-                    "tax_rate_percent": tax_rate,
-                    "estimated_tax": tax_amt,
-                    "estimated_tax_display": display_amount(tax_amt),
-                    "estimated_monthly_with_tax": total_with_tax,
-                    "estimated_monthly_with_tax_display": display_amount(total_with_tax),
-                    "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
-                },
+                res_dict,
                 reference,
                 language=lang,
                 spoken_summary=("Forfait télé activé." if is_tv_order else "Forfait télé récupéré.") if lang.startswith("fr") else ("TV package added." if is_tv_order else "TV package retrieved."),

@@ -632,7 +632,7 @@ _SYNTHESIZED_ACCOUNTS: dict[str, dict[str, Any]] = {}
 def find_account(identifier: Any) -> dict[str, Any] | None:
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
-    raw_str = re.sub(r"^(?:mobile|phone|cell|tel|t[eé]l[eé]phone|num[eé]ro|account|compte)\s*[:=-]\s*", "", raw_str, flags=re.IGNORECASE).strip()
+    raw_str = re.sub(r"^(?:phone\s+number|account\s+number|num[eé]ro\s+de\s+t[eé]l[eé]phone|num[eé]ro\s+de\s+compte|mobile|phone|cell|tel|t[eé]l[eé]phone|num[eé]ro|account|compte)\s*[:=-]\s*", "", raw_str, flags=re.IGNORECASE).strip()
     raw = raw_str.upper()
     if not raw:
         return None
@@ -678,7 +678,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         digits_10 = "202" + digits
         acc_key = "A" + digits_10[-6:]
         pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
-        return {
+        acc_dict = {
             "account_id": acc_key,
             "phone": digits_10,
             k_last4: digits[-4:],
@@ -691,7 +691,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             "card_on_file_status": "declined_expired",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
-            "region": "Region-A",
+            "region": "Region-B",
             "loyalty_limit": 25.0,
             "mfa_enabled": False,
             "active_services": ["mobile", "internet"],
@@ -707,12 +707,18 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
                 }
             ],
         }
+        _SYNTHESIZED_ACCOUNTS[acc_key] = copy.deepcopy(acc_dict)
+        _SYNTHESIZED_ACCOUNTS[digits] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        return copy.deepcopy(acc_dict)
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
             return None
         acc_key = "A" + digits[-6:]
         pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
-        return {
+        is_phone = (len(digits) == 10 and not raw_str.upper().startswith("A"))
+        acc_dict = {
             "account_id": acc_key,
             "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
@@ -722,10 +728,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
-            "card_on_file_status": "declined_expired",
+            "card_on_file_status": "declined_expired" if is_phone else "active",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
-            "region": "Region-A",
+            "region": "Region-B",
             "loyalty_limit": 25.0,
             "mfa_enabled": False,
             "active_services": ["mobile", "internet"],
@@ -741,6 +747,11 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
                 }
             ],
         }
+        _SYNTHESIZED_ACCOUNTS[acc_key] = copy.deepcopy(acc_dict)
+        _SYNTHESIZED_ACCOUNTS[digits] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        return copy.deepcopy(acc_dict)
     is_ref_or_acc = (
         (has_alpha and any(c.isdigit() for c in raw_str) and not (raw.startswith("ACC-") and len(raw) < 8) and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
         or norm["kind"] == "reference"
@@ -756,6 +767,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         base["business_flag"] = "BUS" in ref_id.upper()
         if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
             base["card_on_file_status"] = "declined_expired"
+        base["region"] = "Region-B"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",

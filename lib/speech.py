@@ -51,39 +51,53 @@ def enforce_outage_utterance(
 ) -> str:
     """Ensure active outage announcements speak all three sentences verbatim."""
     clean_text = (text or "").strip()
+    state_dict = session_params if isinstance(session_params, dict) else {}
+    pending_announce = bool(state_dict.get("outage_announce_pending"))
+    if pending_announce:
+        state_dict["outage_announce_pending"] = False
+
     if not clean_text:
+        if pending_announce:
+            lang = str(state_dict.get("language") or "")
+            return spoken_line("outage_active", "fr-CA" if lang.startswith("fr") else "en-US")
         return text
 
     low = clean_text.lower()
-    is_en_outage = (
-        "active outage in your area" in low
-        or "there's an active outage" in low
-        or "there is an active outage" in low
-    )
-    is_fr_outage = (
-        "panne active dans votre secteur" in low
-        or ("panne active" in low and "secteur" in low)
-    )
-    if not (is_en_outage or is_fr_outage):
+    # adv_iter12_1: Do not overwrite if utterance contains credit amounts or adjustments
+    if any(k in low for k in ("$", "credit", "crédit", "adjustment", "ajustement", "sub-", "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9")):
         return text
 
     # Do not overwrite a dedicated SMS registration confirmation turn
     if any(k in low for k in ("i've registered", "j'ai inscrit", "j'ai bien noté", "registered text", "registered your number")):
         return text
 
-    state_dict = session_params if isinstance(session_params, dict) else {}
+    is_en_outage = (
+        pending_announce
+        or "active outage in your area" in low
+        or "there's an active outage" in low
+        or "there is an active outage" in low
+        or ("active outage" in low and "area" in low)
+    )
+    is_fr_outage = (
+        (pending_announce and str(state_dict.get("language", "")).startswith("fr"))
+        or "panne active dans votre secteur" in low
+        or ("panne active" in low and "secteur" in low)
+    )
+    if not (is_en_outage or is_fr_outage):
+        return text
+
     lang = str(state_dict.get("language") or "")
     if is_fr_outage or lang.startswith("fr"):
         full_line = spoken_line("outage_active", "fr-CA")
         has_s2 = "travaillons" in low
         has_s3 = "texto lorsque" in low or "sera rétabli" in low or "sera retabli" in low
-        if not has_s2 or not has_s3:
+        if pending_announce or not has_s2 or not has_s3:
             return full_line
     else:
         full_line = spoken_line("outage_active", "en-US")
         has_s2 = "working on it" in low
         has_s3 = "text you when" in low or "when it's restored" in low or "when it is restored" in low
-        if not has_s2 or not has_s3:
+        if pending_announce or not has_s2 or not has_s3:
             return full_line
 
     return text
@@ -180,8 +194,8 @@ def enforce_handover_utterance(
             return f"{explanation_sent} {clean_text}"
         if has_explanation and not has_transfer:
             clean_text = re.sub(
-                r"(?:(?:i (?:will|shall|can|must) )?(?:transfer|connect) you to a representative(?: now)?\.?|"
-                r"(?:je vous (?:transf[eé]rerai?|mets en contact avec) un repr[eé]sentant(?: maintenant)?\.?))",
+                r"(?:(?:i (?:will|shall|can|must|'m|am)?\s*(?:transferring|transfer|connect) you (?:to|with) (?:a |an )?(?:customer service |live )?representative(?: now| right away| immediately| shortly)?\.?)|"
+                r"(?:je vous (?:transf[eéè]re|transf[eéè]rerai?|mets en contact avec)\s*(?:[àa]\s+)?un repr[eé]sentant(?: maintenant| imm[eé]diatement| tout de suite)?\.?))",
                 "",
                 clean_text,
                 flags=re.IGNORECASE,

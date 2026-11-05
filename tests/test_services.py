@@ -1306,6 +1306,65 @@ def test_adv_iter11_6_french_pay_bill_and_plans_localization() -> None:
     assert r_prior["data"]["payment_verified"] is True
 
 
+def test_ve_57_explicit_card_on_file_mention_in_summary() -> None:
+    st = {"account_id": "A550133", "past_due_balance": 85.50, "logged_in": True}
+    r1 = submit_request_impl(
+        "Pay full balance using primary card on file ending in 6677",
+        action="pay_bill",
+        card_last4="6677",
+        state=st,
+    )
+    assert r1["status"] == "error"
+    assert r1["error"] == "CARD_DECLINED"
+    assert r1["data"]["declined_card_last4"] == "6677"
+    assert st["payment_declined_once"] is True
+
+    r2 = submit_request_impl(
+        "Pay balance with new card on keypad",
+        action="pay_bill",
+        card_last4="4492",
+        state=st,
+    )
+    assert r2["status"] == "ok"
+    assert r2["data"]["paid"] is True
+    assert r2["data"]["amount"] == 85.50
+    assert r2["data"]["card_last4"] == "4492"
+
+
+def test_check_balance_early_cancellation_fee_pregrounded() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("check balance", action="check_balance", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["early_cancellation_fee"] == 150.00
+    assert res["data"]["early_cancellation_fee_display"] == "150.00"
+    assert "contract_end_date" in res["data"]
+
+
+def test_adv_iter12_5_tv_catalog_french_localization() -> None:
+    res = submit_request_impl("forfaits tv sport", action="search_plans", service_type="tv", language="fr-CA", state={})
+    assert res["status"] == "ok"
+    data = res["data"]
+    assert data["package_name"] == "Forfait Sports"
+    assert data["channels"] == ["Sports 1-4", "Courses en direct", "Golf Central"]
+    assert "plans" in data
+    assert len(data["plans"]) == 1
+    assert data["plans"][0]["package_name"] == "Forfait Sports"
+
+
+def test_adv_iter12_2_guest_pin_intent_not_step_up() -> None:
+    st = {"logged_in": False, "pin_attempts": 0, "last_user_utterance": "I want to verify for security"}
+    res = check_secret_pin_impl("4821", state=st)
+    assert res["status"] == "ok"
+    assert not st.get("step_up_active")
+
+
+def test_adv_iter12_1_outage_state_coupling() -> None:
+    st = {"language": "en-US"}
+    res = submit_request_impl("is there an outage in 20001", action="outage_check", postal_code="20001", state=st)
+    assert res["status"] == "ok"
+    assert st.get("outage_announce_pending") is True
+
+
 
 
 

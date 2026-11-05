@@ -834,8 +834,8 @@ def check_secret_pin_impl(  # pragma: no cover
         state.get("logged_in")
         or state.get("auth_status") == "pass"
         or state.get("step_up_active")
-        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "désactiver", "desactiver", "authentification", "security", "2fa", "multi-factor"))
-        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "désactiver", "desactiver", "authentification", "security", "2fa", "multi-factor"))
+        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
+        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
     )
     if is_step_up:
         state["step_up_active"] = True

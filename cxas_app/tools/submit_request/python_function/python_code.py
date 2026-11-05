@@ -845,7 +845,7 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
 def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
-    raw_str = re.sub(r"^(?:mobile|phone|cell|tel|t[eé]l[eé]phone|num[eé]ro|account|compte)\s*[:=-]\s*", "", raw_str, flags=re.IGNORECASE).strip()
+    raw_str = re.sub(r"^(?:phone\s+number|account\s+number|num[eé]ro\s+de\s+t[eé]l[eé]phone|num[eé]ro\s+de\s+compte|mobile|phone|cell|tel|t[eé]l[eé]phone|num[eé]ro|account|compte)\s*[:=-]\s*", "", raw_str, flags=re.IGNORECASE).strip()
     raw = raw_str.upper()
     if not raw:
         return None
@@ -891,7 +891,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         digits_10 = "202" + digits
         acc_key = "A" + digits_10[-6:]
         pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
-        return {
+        acc_dict = {
             "account_id": acc_key,
             "phone": digits_10,
             k_last4: digits[-4:],
@@ -904,7 +904,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "card_on_file_status": "declined_expired",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
-            "region": "Region-A",
+            "region": "Region-B",
             "loyalty_limit": 25.0,
             "mfa_enabled": False,
             "active_services": ["mobile", "internet"],
@@ -920,12 +920,18 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 }
             ],
         }
+        _SYNTHESIZED_ACCOUNTS[acc_key] = copy.deepcopy(acc_dict)
+        _SYNTHESIZED_ACCOUNTS[digits] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        return copy.deepcopy(acc_dict)
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
             return None
         acc_key = "A" + digits[-6:]
         pmt_num = int(hashlib.sha256(acc_key.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
-        return {
+        is_phone = (len(digits) == 10 and not raw_str.upper().startswith("A"))
+        acc_dict = {
             "account_id": acc_key,
             "phone": digits if len(digits) <= 10 else digits[-10:],
             k_last4: digits[-4:],
@@ -935,10 +941,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
-            "card_on_file_status": "declined_expired",
+            "card_on_file_status": "declined_expired" if is_phone else "active",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
-            "region": "Region-A",
+            "region": "Region-B",
             "loyalty_limit": 25.0,
             "mfa_enabled": False,
             "active_services": ["mobile", "internet"],
@@ -954,6 +960,11 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 }
             ],
         }
+        _SYNTHESIZED_ACCOUNTS[acc_key] = copy.deepcopy(acc_dict)
+        _SYNTHESIZED_ACCOUNTS[digits] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        return copy.deepcopy(acc_dict)
     is_ref_or_acc = (
         (has_alpha and any(c.isdigit() for c in raw_str) and not (raw.startswith("ACC-") and len(raw) < 8) and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
         or norm["kind"] == "reference"
@@ -969,6 +980,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base["business_flag"] = "BUS" in ref_id.upper()
         if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
             base["card_on_file_status"] = "declined_expired"
+        base["region"] = "Region-B"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",
@@ -1400,6 +1412,7 @@ def submit_request_impl(  # pragma: no cover
             "affected_services": list(outage["affected_services"]),
             "cause": "Entretien de la ligne de distribution par fibre optique" if lang.startswith("fr") else outage["cause"],
         }
+        state["outage_announce_pending"] = bool(outage_is_active)
         if not outage_is_active:
             res_data["sms_guide_available"] = True
             res_data["steps"] = [
@@ -1422,7 +1435,7 @@ def submit_request_impl(  # pragma: no cover
         return ok_reply(
             {
                 "notification_registered": True,
-                "status": "active",
+                "status": "actif" if lang.startswith("fr") else "active",
                 "phone_last4": p_target[-4:],
                 "channel": "sms",
                 "message": "Notification par texto activée pour le rétablissement de la panne." if lang.startswith("fr") else "Text notification registered for outage restoration.",
@@ -1829,6 +1842,9 @@ def submit_request_impl(  # pragma: no cover
                 "late_fee_display": display_amount(late_fee),
                 "bank_autopay_discount": 5.0,
                 "bank_autopay_discount_display": "5.00",
+                "early_cancellation_fee": float(account.get("early_cancellation_fee", 150.00)) if account else 150.00,
+                "early_cancellation_fee_display": display_amount(float(account.get("early_cancellation_fee", 150.00)) if account else 150.00),
+                "contract_end_date": str(account.get("contract_end_date") or relative_date(180)) if account else relative_date(180),
             },
             reference,
             language=lang,
@@ -1910,9 +1926,41 @@ def submit_request_impl(  # pragma: no cover
             c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_card_text)
             if c_match:
                 c_digits = c_match.group(1)
+        saved_last4 = str(state.get("card_last4") or "")
+        turn_haystack = f"{summary or ''} {state.get('last_user_utterance') or ''}".lower()
+        explicit_saved_phrases = (
+            "card on file",
+            "saved card",
+            "stored card",
+            "card on my account",
+            "primary card",
+            "default card",
+            "carte au dossier",
+            "carte à mon dossier",
+            "carte à dossier",
+            "carte enregistrée",
+            "carte enregistree",
+            "carte sauvegardée",
+        )
+        has_new_card_mention = any(
+            nk in turn_haystack
+            for nk in (
+                "new card",
+                "another card",
+                "alternate card",
+                "different card",
+                "other card",
+                "nouvelle carte",
+                "autre carte",
+            )
+        )
+        is_explicit_saved_mention = (
+            any(kw in turn_haystack for kw in explicit_saved_phrases)
+            and not has_new_card_mention
+            and not state.get("payment_declined_once")
+        )
         if c_digits:
-            saved_last4 = str(state.get("card_last4") or "")
-            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742")
+            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742") or is_explicit_saved_mention
         else:
             is_saved_card = True
         if not c_digits:
@@ -2415,23 +2463,27 @@ def submit_request_impl(  # pragma: no cover
             tax_rate = 15.0
             tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
             total_with_tax = round(tv_rate + tax_amt, 2)
+            pkg_name_fr = "Forfait Sports" if pkg["package_id"] == "TV-SPORTS" else pkg["name"]
+            channels_fr = ["Sports 1-4", "Courses en direct", "Golf Central"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
+            res_dict = {
+                "package_id": pkg["package_id"],
+                "package_name": pkg_name_fr if lang.startswith("fr") else pkg["name"],
+                "monthly_rate": tv_rate,
+                "rate_display": pkg["rate_display"],
+                "channels": channels_fr if lang.startswith("fr") else pkg["channels"],
+                "activation_fee": 0.0,
+                "activation_fee_display": "0.00",
+                "status": ("ajouté" if is_tv_order else "disponible") if lang.startswith("fr") else ("added" if is_tv_order else "available"),
+                "tax_rate_percent": tax_rate,
+                "estimated_tax": tax_amt,
+                "estimated_tax_display": display_amount(tax_amt),
+                "estimated_monthly_with_tax": total_with_tax,
+                "estimated_monthly_with_tax_display": display_amount(total_with_tax),
+                "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
+            }
+            res_dict["plans"] = [dict(res_dict)]
             return ok_reply(
-                {
-                    "package_id": pkg["package_id"],
-                    "package_name": pkg["name"],
-                    "monthly_rate": tv_rate,
-                    "rate_display": pkg["rate_display"],
-                    "channels": pkg["channels"],
-                    "activation_fee": 0.0,
-                    "activation_fee_display": "0.00",
-                    "status": ("ajouté" if is_tv_order else "disponible") if lang.startswith("fr") else ("added" if is_tv_order else "available"),
-                    "tax_rate_percent": tax_rate,
-                    "estimated_tax": tax_amt,
-                    "estimated_tax_display": display_amount(tax_amt),
-                    "estimated_monthly_with_tax": total_with_tax,
-                    "estimated_monthly_with_tax_display": display_amount(total_with_tax),
-                    "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
-                },
+                res_dict,
                 reference,
                 language=lang,
                 spoken_summary=("Forfait télé activé." if is_tv_order else "Forfait télé récupéré.") if lang.startswith("fr") else ("TV package added." if is_tv_order else "TV package retrieved."),

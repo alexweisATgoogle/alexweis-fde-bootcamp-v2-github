@@ -3,6 +3,7 @@ from lib.speech import (
     clean_agent_speech,
     clean_speech,
     enforce_handover_utterance,
+    enforce_outage_utterance,
     mask_long_numbers,
     strip_markdown,
 )
@@ -93,5 +94,27 @@ def test_enforce_handover_utterance_threshold_guarantee() -> None:
 
     st_reason2 = {"handoff_reason": "dispute_limit_exceeded", "language": "fr-CA"}
     assert "dépassant la limite automatisée" in enforce_handover_utterance("", st_reason2)
+
+
+def test_adv_iter12_1_outage_credit_guard() -> None:
+    txt = "I have approved a credit of $5.70 on your account. Your reference is SUB-9912. Note that there is an active outage in your area."
+    st = {"outage_announce_pending": True, "language": "en-US"}
+    res = enforce_outage_utterance(txt, st)
+    assert res == txt
+    assert st["outage_announce_pending"] is False
+
+
+def test_adv_iter12_4_handover_utterance_with_adverbs() -> None:
+    txt = "Disputes exceeding the automated limit require review by a specialist. I will connect you with a representative right away."
+    st = {"dispute_limit_exceeded": True, "language": "en-US"}
+    res = enforce_handover_utterance(txt, st)
+    assert "Disputes exceeding the automated limit require review by a specialist." in res
+    assert "representative right away" not in res
+    assert "billing specialist now" in res
+
+    txt_fr = "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. Je vous transfère à un représentant tout de suite."
+    st_fr = {"dispute_limit_exceeded": True, "language": "fr-CA"}
+    res_fr = enforce_handover_utterance(txt_fr, st_fr)
+    assert "spécialiste de la facturation maintenant" in res_fr
 
 

@@ -221,6 +221,22 @@ def test_adv_iter11_3_find_account_deepcopy_isolation() -> None:
     assert len(acc2["payment_ledger"]) == 1
 
 
+def test_adv_iter12_3_multiword_prefix_and_numeric_caching() -> None:
+    acc_12_3a = find_account("Phone number: 416-555-0133")
+    assert acc_12_3a is not None
+    assert acc_12_3a["account_id"] == "A550133"
+    assert acc_12_3a["phone"] == "4165550133"
+
+    acc_12_3b = find_account("A550133")
+    assert acc_12_3b is not None
+    assert acc_12_3b["phone"] == "4165550133"
+
+    acc_num = find_account("847291034")
+    assert acc_num is not None
+    assert acc_num["card_on_file_status"] == "active"
+    assert acc_num["region"] == "Region-B"
+
+
 
 
 
