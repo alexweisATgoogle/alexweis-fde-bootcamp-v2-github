@@ -990,6 +990,8 @@ def submit_request_impl(
             "affected_services": list(outage["affected_services"]),
             "cause": "Entretien de la ligne de distribution par fibre optique" if lang.startswith("fr") else outage["cause"],
         }
+        if outage_is_active:
+            res_data["outage_active_message"] = spoken_line("outage_active", lang)
         state["outage_announce_pending"] = bool(outage_is_active)
         state["outage_active"] = bool(outage_is_active)
         if not outage_is_active:

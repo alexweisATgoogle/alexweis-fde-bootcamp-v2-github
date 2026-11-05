@@ -56,6 +56,10 @@ def enforce_outage_utterance(
     if pending_announce:
         state_dict["outage_announce_pending"] = False
 
+    # If outage is known to be inactive / clear in session state, NEVER overwrite with active outage text
+    if state_dict.get("outage_active") is False or str(state_dict.get("outage_status", "")).lower() in ("clear", "normal"):
+        return text
+
     if not clean_text:
         if pending_announce:
             lang = str(state_dict.get("language") or "")
@@ -65,8 +69,10 @@ def enforce_outage_utterance(
     low = clean_text.lower()
     # If the text explicitly says there is no outage, NEVER overwrite
     if any(neg in low for neg in (
-        "no active outage", "no outage", "not seeing", "there is no outage",
-        "isn't an outage", "is not an outage", "pas de panne", "aucune panne",
+        "no active outage", "no active outages", "no outage", "no outages",
+        "no known outage", "no known outages", "no reported outage", "no reported outages",
+        "there is no outage", "there are no outages", "there are no active outages",
+        "not seeing", "isn't an outage", "is not an outage", "pas de panne", "aucune panne",
         "aucun incident", "n'y a pas de panne", "pas d'interruption", "fonctionne normalement"
     )):
         return text
