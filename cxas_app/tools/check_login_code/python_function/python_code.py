@@ -589,12 +589,12 @@ def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 
     """Whether the fake login service accepts a secret PIN.
 
     Under the 3-attempt PIN ladder:
-      - Attempt 1 (attempts == 0): any 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
-      - Attempt 2 (attempts == 1): any valid 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 1 (attempts == 0): any 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 2 (attempts == 1): any valid 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
     """
     digits = normalize_code(pin_digits)
-    if not (4 <= len(digits) <= 10):
+    if not (4 <= len(digits) <= 6):
         return False
     if digits in ALWAYS_WRONG_LOGIN_CODES:
         return False

@@ -796,6 +796,12 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
         digits = compact[2:]
         if digits.isdigit() and 10 <= len(digits) <= 15:
             return {"kind": "international_phone", "value": "+" + digits}
+    has_alpha = any(c.isalpha() for c in s)
+    has_digit = any(c.isdigit() for c in s)
+    if "-" in s and has_alpha and has_digit:
+        clean_ref = re.sub(r"[^A-Za-z0-9\-]", "", s).upper()
+        if re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", clean_ref):
+            return {"kind": "reference", "value": clean_ref}
     ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
     if ref_match1:
         prefix, digits = ref_match1.groups()
@@ -914,7 +920,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             ],
         }
     if (
-        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
+        (has_alpha and any(c.isdigit() for c in raw_str) and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
@@ -1341,6 +1347,7 @@ def submit_request_impl(  # pragma: no cover
         outage_is_active = bool(outage["active"])
         res_data: dict[str, Any] = {
             "outage_active": outage_is_active,
+            "outage_status": ("actif" if outage_is_active else "normal") if lang.startswith("fr") else ("active" if outage_is_active else "clear"),
             "region": region,
             "restoration_eta_iso": outage["restoration_eta_iso"],
             "estimated_restoration": "aujourd'hui d'ici 18 h 00" if lang.startswith("fr") else "today by 6:00 PM",
@@ -1398,12 +1405,24 @@ def submit_request_impl(  # pragma: no cover
 
     # 3. Open Support Ticket Status (M6) — Information inquiry, does not require login
     if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
-        tid_match = re.search(r"\b(T\d{5})\b", clean_summary.upper())
-        tid = tid_match.group(1) if tid_match else "T88219"
-        ticket = TICKETS.get(tid, TICKETS["T88219"])
+        tid_match = re.search(r"\b((?:INC|TKT|SR|CASE|TT)-?\d{4,8}|T\d{4,8})\b", clean_summary, re.IGNORECASE)
+        tid = tid_match.group(1).upper() if tid_match else "T88219"
+        ticket = TICKETS.get(
+            tid,
+            {
+                "ticket_id": tid,
+                "status": "in_progress",
+                "eta": "Within 24 hours",
+                "service_type": "internet",
+                "description": "Virtual repair ticket for optical line sync",
+            },
+        )
         desc = "Restauration du câble à fibre optique en cours" if lang.startswith("fr") else ticket["description"]
         eta = "D'ici 24 heures" if lang.startswith("fr") else ticket["eta"]
-        status_lbl = "ouvert" if lang.startswith("fr") and ticket["status"] == "open" else ticket["status"]
+        if lang.startswith("fr"):
+            status_lbl = "en_cours" if ticket["status"] in ("in_progress", "en_cours") else ("ouvert" if ticket["status"] == "open" else ticket["status"])
+        else:
+            status_lbl = ticket["status"]
         return ok_reply(
             {
                 "ticket_id": ticket["ticket_id"],
@@ -1694,22 +1713,27 @@ def submit_request_impl(  # pragma: no cover
                 current_bal = 85.50
         if not math.isfinite(current_bal):
             current_bal = 85.50
-        past_due = current_bal
+        is_credit = current_bal < 0
+        credit_bal = round(abs(current_bal), 2) if is_credit else 0.0
+        past_due = 0.0 if is_credit else current_bal
         late_fee = 10.0 if (past_due > 0 and current_bal >= 25.0) else 0.0
         plan_amount = round((current_bal - late_fee) / 1.15, 2) if current_bal > 0 else 0.0
         taxes_and_fees = round(current_bal - late_fee - plan_amount, 2) if current_bal > 0 else 0.0
         card_on_file = str(state.get("card_last4") or (account.get("card_last4") if account else "7742") or "7742")
+        status_val = ("solde_crediteur" if lang.startswith("fr") else "credit_balance") if is_credit else ("pending_payment" if current_bal > 0 else "paid")
         return ok_reply(
             {
                 "balance": current_bal,
                 "balance_display": display_amount(current_bal),
-                "balance_due": current_bal,
-                "balance_due_display": display_amount(current_bal),
-                "past_due_balance": current_bal,
-                "past_due_balance_display": display_amount(current_bal),
+                "balance_due": past_due,
+                "balance_due_display": display_amount(past_due),
+                "past_due_balance": past_due,
+                "past_due_balance_display": display_amount(past_due),
+                "credit_balance": credit_bal,
+                "credit_balance_display": display_amount(credit_bal),
                 "due_date": relative_date(7),
                 "card_on_file_last4": card_on_file,
-                "status": "pending_payment" if current_bal > 0 else "paid",
+                "status": status_val,
                 "plan_amount": plan_amount,
                 "plan_amount_display": display_amount(plan_amount),
                 "taxes_and_fees": taxes_and_fees,
@@ -1757,7 +1781,11 @@ def submit_request_impl(  # pragma: no cover
 
         c_digits = normalize_code(card_last4)
         if not c_digits:
-            c_match = re.search(r"\b(\d{4})\b", clean_summary)
+            long_match = re.search(r"(?<!\d)(\d{12,19})(?!\d)", clean_summary)
+            if long_match:
+                c_digits = long_match.group(1)[-4:]
+        if not c_digits:
+            c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_summary)
             if c_match:
                 c_digits = c_match.group(1)
         if not c_digits:
@@ -1832,15 +1860,15 @@ def submit_request_impl(  # pragma: no cover
     ):
         is_hazard = is_safety_hazard or any(k in low for k in ("battery", "batterie", "thermal", "thermique", "overheating", "surchauffe", "hazard", "danger", "smoke", "fumée", "fumee", "safety", "sécurité", "securite"))
         ref_id = "WAR-" + tracking_id("warranty", clean_summary)
+        # adv_iter6_1: Robust negated damage stripping supporting comma-separated lists and French compound verbs
+        _dmg_term = r"(?:damage\w*|water|liquid|crack\w*|drop\w*|dommage\w*|dégât\w*|degat\w*|eau|liquide|fissur\w*|chute\w*|tomb\w*)"
+        _neg_leader = r"(?:no|not|without|zero|neither|nor|never|free\s+of|aucun\w*|aucune|pas\s+(?:de|d['’])|sans|jamais|aucun\s+dommage|aucun\s+dégât\w*|n['’\s](?:est|y\s+a|a)\s+pas(?:\s+pris)?)"
+        _dmg_item = rf"(?:[a-zA-Z'’\s]{{0,15}}\b{_dmg_term}\b[a-zA-Z'’\s]{{0,15}})"
         low_clean_damage = re.sub(
-            r"\b(?:no|not|without|zero|neither|nor|never|free\s+of|aucun\w*|aucune|pas\s+(?:de|d['’])|sans|jamais|aucun\s+dommage|aucun\s+dégât\w*|n['’\s]est\s+pas)\b[^.!?;,]{0,60}\b(?:damage|damaged|water|liquid|crack\w*|drop\w*|dommage\w*|dégât\w*|degat\w*|eau|liquide|fissur\w*|chute\w*|tomb\w*)\b",
+            rf"\b{_neg_leader}\b\s+{_dmg_item}(?:\s*(?:,(?!\s*(?:but|mais|however))\s*|\s+(?:ou|or|and|et|ni|nor)\s*)(?:pas\s+de\s+)?{_dmg_item})*",
             "",
             low,
-        )
-        low_clean_damage = re.sub(
-            r"\bn['’\s]est\s+pas\s+(?:fissur\w*|endommag\w*|tomb\w*)\b",
-            "",
-            low_clean_damage,
+            flags=re.IGNORECASE,
         )
         has_physical_damage = bool(
             re.search(
@@ -1858,6 +1886,10 @@ def submit_request_impl(  # pragma: no cover
                 data={"claim_status": "rejected_physical_damage", "covered": False},
             )
         delivery = "3 à 5 jours ouvrables" if lang.startswith("fr") else "3 to 5 business days"
+        coverage_status = "actif" if lang.startswith("fr") else "active"
+        replacement_cond = "neuf" if lang.startswith("fr") else "brand_new"
+        p_date = relative_date(-180)
+        w_exp = relative_date(185)
         if is_hazard:
             return ok_reply(
                 {
@@ -1866,6 +1898,10 @@ def submit_request_impl(  # pragma: no cover
                     "tracking_id": ref_id,
                     "warranty_reference": ref_id,
                     "claim_status": "approved_urgent",
+                    "coverage_status": coverage_status,
+                    "replacement_condition": replacement_cond,
+                    "purchase_date": p_date,
+                    "warranty_expiration": w_exp,
                     "hazard_warning": True,
                     "safety_instructions": "Cessez immédiatement d'utiliser et de charger l'appareil." if lang.startswith("fr") else "Stop using and charging the device immediately. Keep in a fire-safe area.",
                     "replacement_shipped": True,
@@ -1884,6 +1920,10 @@ def submit_request_impl(  # pragma: no cover
                 "tracking_id": ref_id,
                 "warranty_reference": ref_id,
                 "claim_status": "approved_standard",
+                "coverage_status": coverage_status,
+                "replacement_condition": replacement_cond,
+                "purchase_date": p_date,
+                "warranty_expiration": w_exp,
                 "hazard_warning": False,
                 "replacement_shipped": True,
                 "delivery_window": delivery,

@@ -128,3 +128,28 @@ def test_synthesized_account_payment_ledger() -> None:
     assert ledger_entry["payment_id"].startswith("PMT-")
 
 
+def test_ve_61_hyphenated_alphanumeric_account_id() -> None:
+    norm = normalize_identifier("8829-XJ-01")
+    assert norm["kind"] == "reference"
+    assert norm["value"] == "8829-XJ-01"
+
+    acc = find_account("8829-XJ-01")
+    assert acc is not None
+    assert acc["account_id"] == "8829-XJ-01"
+    assert len(acc["payment_ledger"]) == 1
+    assert acc["payment_ledger"][0]["payment_id"].startswith("PMT-")
+
+    # Numeric phone is NEVER hijacked (Override A1: use generic 416-555-0100)
+    assert normalize_identifier("416-555-0100")["kind"] == "phone"
+
+
+def test_secret_pin_accepted_length_restriction() -> None:
+    # 4 to 6 digits accepted
+    assert secret_pin_accepted("5678", attempts=0) is True
+    assert secret_pin_accepted("123456", attempts=0) is True
+    # 9-digit account numbers rejected
+    assert secret_pin_accepted("928374651", attempts=0) is False
+    assert secret_pin_accepted("123", attempts=0) is False
+
+
+

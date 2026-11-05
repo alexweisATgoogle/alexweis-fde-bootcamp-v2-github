@@ -585,6 +585,12 @@ def normalize_identifier(raw: object) -> dict[str, str]:
         digits = compact[2:]
         if digits.isdigit() and 10 <= len(digits) <= 15:
             return {"kind": "international_phone", "value": "+" + digits}
+    has_alpha = any(c.isalpha() for c in s)
+    has_digit = any(c.isdigit() for c in s)
+    if "-" in s and has_alpha and has_digit:
+        clean_ref = re.sub(r"[^A-Za-z0-9\-]", "", s).upper()
+        if re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", clean_ref):
+            return {"kind": "reference", "value": clean_ref}
     ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
     if ref_match1:
         prefix, digits = ref_match1.groups()
@@ -704,7 +710,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
             ],
         }
     if (
-        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
+        (has_alpha and any(c.isdigit() for c in raw_str) and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
@@ -752,12 +758,12 @@ def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 
     """Whether the fake login service accepts a secret PIN.
 
     Under the 3-attempt PIN ladder:
-      - Attempt 1 (attempts == 0): any 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
-      - Attempt 2 (attempts == 1): any valid 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 1 (attempts == 0): any 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 2 (attempts == 1): any valid 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
     """
     digits = normalize_code(pin_digits)
-    if not (4 <= len(digits) <= 10):
+    if not (4 <= len(digits) <= 6):
         return False
     if digits in ALWAYS_WRONG_LOGIN_CODES:
         return False

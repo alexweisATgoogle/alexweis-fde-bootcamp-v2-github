@@ -565,12 +565,12 @@ def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 
     """Whether the fake login service accepts a secret PIN.
 
     Under the 3-attempt PIN ladder:
-      - Attempt 1 (attempts == 0): any 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
-      - Attempt 2 (attempts == 1): any valid 4- to 10-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 1 (attempts == 0): any 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
+      - Attempt 2 (attempts == 1): any valid 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
     """
     digits = normalize_code(pin_digits)
-    if not (4 <= len(digits) <= 10):
+    if not (4 <= len(digits) <= 6):
         return False
     if digits in ALWAYS_WRONG_LOGIN_CODES:
         return False
@@ -732,6 +732,38 @@ def check_secret_pin_impl(  # pragma: no cover
     account_id = str(state.get("account_id") or "")
     reference = tracking_id("check_secret_pin", account_id)
     state["last_tracking_id"] = reference
+    pin_raw = str(pin or "").strip()
+    low_pin = pin_raw.lower()
+    # adv_iter6_3: BR-TV-007 DTMF-only PIN enforcement (reject explicit spoken PIN markers when not negated)
+    is_negated_speech = bool(
+        re.search(
+            r"\b(?:not|did\s+not|never|sans|non|pas)\b[^.!?;,]{0,30}\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé])\b",
+            low_pin,
+        )
+    )
+    has_speech_marker = bool(
+        re.search(
+            r"\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé])\b",
+            low_pin,
+        )
+    )
+    if has_speech_marker and not is_negated_speech:
+        if lang.startswith("fr"):
+            return error_reply(
+                "INVALID_INPUT",
+                "Le NIP ne doit pas être prononcé à voix haute pour des raisons de sécurité.",
+                "Demander à l'appelant de saisir son NIP secret à 4 chiffres sur le clavier téléphonique.",
+                reference,
+                language=lang,
+            )
+        return error_reply(
+            "INVALID_INPUT",
+            "PIN must be entered on the phone keypad, not spoken aloud.",
+            "Ask caller to enter their 4-digit secret PIN on the keypad.",
+            reference,
+            language=lang,
+        )
+
     digits = normalize_code(pin)
     verified_pin = str(state.get("verified_pin") or "")
     if verified_pin and digits != verified_pin:
@@ -792,19 +824,19 @@ def check_secret_pin_impl(  # pragma: no cover
         state["auth_status"] = "locked"
         state["logged_in"] = False
         return locked_reply(reference, failures, lang=lang)
-    if not (4 <= len(digits) <= 10):
+    if not (4 <= len(digits) <= 6):
         if lang.startswith("fr"):
             return error_reply(
                 "INVALID_INPUT",
-                "Un NIP secret comporte de 4 à 10 chiffres.",
+                "Un NIP secret comporte de 4 à 6 chiffres.",
                 "Demander à l'appelant de saisir à nouveau son NIP secret sur le clavier.",
                 reference,
                 language=lang,
             )
         return error_reply(
             "INVALID_INPUT",
-            "A secret PIN has 4 to 10 digits.",
-            "Ask the caller to say or key in their secret PIN again.",
+            "A secret PIN has 4 to 6 digits.",
+            "Ask the caller to enter their 4-digit to 6-digit secret PIN on the keypad.",
             reference,
             language=lang,
         )

@@ -505,6 +505,12 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
         digits = compact[2:]
         if digits.isdigit() and 10 <= len(digits) <= 15:
             return {"kind": "international_phone", "value": "+" + digits}
+    has_alpha = any(c.isalpha() for c in s)
+    has_digit = any(c.isdigit() for c in s)
+    if "-" in s and has_alpha and has_digit:
+        clean_ref = re.sub(r"[^A-Za-z0-9\-]", "", s).upper()
+        if re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", clean_ref):
+            return {"kind": "reference", "value": clean_ref}
     ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
     if ref_match1:
         prefix, digits = ref_match1.groups()
@@ -623,7 +629,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             ],
         }
     if (
-        (has_alpha and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z]{2,5}-?\d{4,8}(?:-[A-Za-z0-9]+)?", raw_str))
+        (has_alpha and any(c.isdigit() for c in raw_str) and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
         or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
     ):
         ref_id = norm["value"] if norm["kind"] == "reference" else raw
@@ -901,6 +907,7 @@ def lookup_account_impl(  # pragma: no cover
         state["login_attempts"] = 0
         state["pin_failure_count"] = 0
         state["pin_attempts"] = 0
+        state.pop("verified_pin", None)
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]

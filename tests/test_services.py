@@ -854,6 +854,108 @@ def test_ve_18_itemized_check_balance_fields() -> None:
     assert "breakdown_note" not in data
 
 
+def test_adv_iter6_1_comma_and_compound_warranty_negations() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "auth_status": "pass"}
+    # Comma-separated list under single negation
+    res1 = submit_request_impl("Screen stopped turning on; no cracks, water damage, or drops", action="warranty", state=st)
+    assert res1["status"] == "ok"
+    assert res1["data"]["warranty_submitted"] is True
+
+    # French list under single negation
+    res2 = submit_request_impl("Le microphone ne fonctionne plus; aucune fissure, chute ou eau", action="warranty", state=st, language="fr-CA")
+    assert res2["status"] == "ok"
+    assert res2["data"]["warranty_submitted"] is True
+
+    # French compound past tense with avoir
+    res3 = submit_request_impl("Mon téléphone ne charge plus, il n'a pas pris l'eau", action="warranty", state=st, language="fr-CA")
+    assert res3["status"] == "ok"
+    assert res3["data"]["warranty_submitted"] is True
+
+    # Genuine physical damage in mixed clause MUST be rejected
+    res_err1 = submit_request_impl("no charging, screen has cracks", action="warranty", state=st)
+    assert res_err1["status"] == "error"
+    assert res_err1["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
+
+    res_err2 = submit_request_impl("screen has cracks, but no water damage", action="warranty", state=st)
+    assert res_err2["status"] == "error"
+    assert res_err2["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
+
+
+def test_adv_iter6_2_pay_bill_16digit_and_year_summary() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "auth_status": "pass", "past_due_balance": 85.50, "card_last4": "7742"}
+    # Case A: 16-digit card ending in 0000 declines
+    res_dec = submit_request_impl("Caller entered 4532000011110000 on keypad", action="pay_bill", state=st)
+    assert res_dec["status"] == "error"
+    assert res_dec["error"] == "CARD_DECLINED"
+
+    # Case B: Calendar year 2026 ignored; saved card 7742 used
+    st_saved = {"account_id": "A1001", "logged_in": True, "auth_status": "pass", "past_due_balance": 85.50, "card_last4": "7742"}
+    res_saved = submit_request_impl("Pay October 2026 bill with saved card on file", action="pay_bill", state=st_saved)
+    assert res_saved["status"] == "ok"
+    assert res_saved["data"]["card_last4"] == "7742"
+
+
+def test_adv_iter6_3_spoken_pin_rejected_in_python() -> None:
+    st = {"account_id": "A1001", "auth_status": "none"}
+    res_spoken = check_secret_pin_impl(pin="caller spoke 5678 aloud", state=st)
+    assert res_spoken["status"] == "error"
+    assert res_spoken["error"] == "INVALID_INPUT"
+    assert len(res_spoken["agent_action"]) <= 120
+
+    res_spoken_fr = check_secret_pin_impl(pin="l'appelant a dit 5678 à voix haute", state=st, language="fr-CA")
+    assert res_spoken_fr["status"] == "error"
+    assert res_spoken_fr["error"] == "INVALID_INPUT"
+    assert len(res_spoken_fr["agent_action"]) <= 120
+
+    # Keypad / DTMF passes cleanly
+    res_keypad = check_secret_pin_impl(pin="DTMF: 5678", state=st)
+    assert res_keypad["status"] == "ok"
+    assert res_keypad["data"]["verified"] is True
+
+
+def test_adv_iter6_4_negative_credit_balance_check() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "past_due_balance": -15.00}
+    res = submit_request_impl("Check balance", action="check_balance", state=st)
+    assert res["status"] == "ok"
+    data = res["data"]
+    assert data["past_due_balance"] == 0.0
+    assert data["past_due_balance_display"] == "0.00"
+    assert data["credit_balance"] == 15.00
+    assert data["credit_balance_display"] == "15.00"
+    assert data["status"] == "credit_balance"
+
+
+def test_ve_08_incident_ticket_extraction() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("Status check for ticket INC-882910", action="check_ticket", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["ticket_id"] == "INC-882910"
+    assert res["data"]["status"] == "in_progress"
+
+
+def test_ve_47_warranty_preground_faq_fields() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("Camera defect", action="warranty", state=st, language="en-US")
+    assert res["status"] == "ok"
+    data = res["data"]
+    assert data["coverage_status"] == "active"
+    assert data["replacement_condition"] == "brand_new"
+    assert len(data["purchase_date"]) == 10
+    assert len(data["warranty_expiration"]) == 10
+
+
+def test_ve_03_outage_status_structured_field() -> None:
+    st = {"account_id": "A1001"}
+    res_act = submit_request_impl("Check outage", action="outage_check", postal_code="K1A 0B1", state=st)
+    assert res_act["status"] == "ok"
+    assert res_act["data"]["outage_status"] == "active"
+
+    res_clr = submit_request_impl("Check outage", action="outage_check", postal_code="K1A 1B1", state=st)
+    assert res_clr["status"] == "ok"
+    assert res_clr["data"]["outage_status"] == "clear"
+
+
+
 
 
 
