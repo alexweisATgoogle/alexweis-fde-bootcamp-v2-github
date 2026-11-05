@@ -1824,6 +1824,8 @@ def submit_request_impl(  # pragma: no cover
                 "taxes_and_fees_display": display_amount(taxes_and_fees),
                 "late_fee": late_fee,
                 "late_fee_display": display_amount(late_fee),
+                "bank_autopay_discount": 5.0,
+                "bank_autopay_discount_display": "5.00",
             },
             reference,
             language=lang,
@@ -1905,11 +1907,11 @@ def submit_request_impl(  # pragma: no cover
             c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_card_text)
             if c_match:
                 c_digits = c_match.group(1)
-        is_saved_card = (
-            not c_digits
-            or c_digits in (str(state.get("card_last4") or ""), "7742")
-            or any(k in low for k in ("card on file", "saved card", "primary card", "primary", "carte enregistrée", "carte enregistree", "carte au dossier"))
-        )
+        if c_digits:
+            saved_last4 = str(state.get("card_last4") or "")
+            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742")
+        else:
+            is_saved_card = True
         if not c_digits:
             c_digits = str(state.get("card_last4") or "")
 
