@@ -297,7 +297,19 @@ def enforce_outage_utterance(  # pragma: no cover
             return spoken_line("outage_active", "fr-CA" if lang.startswith("fr") else "en-US")
         return text
 
+    # If outage is known to be inactive / clear in session state, NEVER overwrite with active outage text
+    if state_dict.get("outage_active") is False or str(state_dict.get("outage_status", "")).lower() in ("clear", "normal"):
+        return text
+
     low = clean_text.lower()
+    # If the text explicitly says there is no outage, NEVER overwrite
+    if any(neg in low for neg in (
+        "no active outage", "no outage", "not seeing", "there is no outage",
+        "isn't an outage", "is not an outage", "pas de panne", "aucune panne",
+        "aucun incident", "n'y a pas de panne", "pas d'interruption", "fonctionne normalement"
+    )):
+        return text
+
     # adv_iter12_1: Do not overwrite if utterance contains credit amounts or adjustments
     if any(k in low for k in ("$", "credit", "crédit", "adjustment", "ajustement", "sub-", "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9")):
         return text

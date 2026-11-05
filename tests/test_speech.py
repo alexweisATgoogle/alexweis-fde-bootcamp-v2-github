@@ -118,3 +118,20 @@ def test_adv_iter12_4_handover_utterance_with_adverbs() -> None:
     assert "spécialiste de la facturation maintenant" in res_fr
 
 
+def test_enforce_outage_negative_or_clear() -> None:
+    # State has outage_active False
+    txt1 = "I checked your account and there is no active outage in your area."
+    st1 = {"outage_active": False, "outage_status": "clear", "language": "en-US"}
+    assert enforce_outage_utterance(txt1, st1) == txt1
+
+    # Text explicitly indicates no outage
+    txt2 = "There is no active outage in your area right now."
+    st2 = {"language": "en-US"}
+    assert enforce_outage_utterance(txt2, st2) == txt2
+
+    txt3 = "Je confirme qu'il n'y a aucune panne active dans votre secteur."
+    st3 = {"language": "fr-CA"}
+    assert enforce_outage_utterance(txt3, st3) == txt3
+
+
+
