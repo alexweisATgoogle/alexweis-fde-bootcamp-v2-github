@@ -1109,6 +1109,72 @@ def test_ve_29_verify_prior_payment_keywords() -> None:
     assert "payment_verified" not in res2.get("data", {})
 
 
+def test_adv_iter9_1_french_tool_payload_localization() -> None:
+    st = {"account_id": "A1001", "language": "fr-CA", "logged_in": True}
+
+    # check_ticket
+    r_tkt = submit_request_impl("Statut billet", action="check_ticket", state=st, language="fr-CA")
+    assert r_tkt["status"] == "ok"
+    assert r_tkt["data"]["service_type"] == "internet_haute_vitesse"
+    assert r_tkt["data"]["status"] in ("en_cours", "ouvert")
+
+    # check_appointment
+    r_apt = submit_request_impl("Statut rendez-vous", action="check_appointment", state=st, language="fr-CA")
+    assert r_apt["status"] == "ok"
+    assert r_apt["data"]["status"] == "en_retard"
+
+    # check_balance
+    r_bal = submit_request_impl("Solde du compte", action="check_balance", state=st, language="fr-CA")
+    assert r_bal["status"] == "ok"
+    assert r_bal["data"]["status"] == "en_attente_de_paiement"
+
+    # port_in
+    r_port = submit_request_impl("Transférer numéro", action="port_in", state=st, language="fr-CA")
+    assert r_port["status"] == "ok"
+    assert r_port["data"]["status"] == "en_attente_de_liberation"
+
+    # dispute
+    r_disp = submit_request_impl("Contester frais", action="dispute", amount=15.0, state=st, language="fr-CA")
+    assert r_disp["status"] == "ok"
+    assert r_disp["data"]["adjustment_type"] == "credit_de_courtoisie"
+    assert r_disp["data"]["status_code"] == "approuve"
+
+
+def test_adv_iter9_3_stepup_pin_validation() -> None:
+    # Logged-in caller attempting step-up with wrong PIN
+    st_logged_in = {"account_id": "A1001", "logged_in": True, "auth_status": "pass"}
+    r_wrong = check_secret_pin_impl(pin="7422", state=st_logged_in)
+    assert r_wrong["status"] == "error"
+    assert r_wrong["error"] == "WRONG_CODE"
+
+    # Logged-in caller with valid step-up PIN
+    r_ok = check_secret_pin_impl(pin="5903", state=st_logged_in)
+    assert r_ok["status"] == "ok"
+    assert r_ok["data"]["verified"] is True
+
+    # Initial login caller (not logged in) with non-blocked PIN
+    st_initial = {"account_id": "A1001", "logged_in": False, "auth_status": "none"}
+    r_init = check_secret_pin_impl(pin="7731", state=st_initial)
+    assert r_init["status"] == "ok"
+
+
+def test_adv_iter9_4_clid_jordan_suppressed() -> None:
+    st = {}
+    r = lookup_account_impl("caller_line_id", state=st, language="fr-CA")
+    assert r["status"] == "ok"
+    assert r["data"]["first_name"] == ""
+    assert r["data"]["account_status"] == "actif"
+
+
+def test_french_autopay_synonyms() -> None:
+    st = {"account_id": "A1001", "logged_in": True, "auth_status": "pass"}
+    r = submit_request_impl("Adhésion au paiement préautorisé", action="adhesion_paiement_automatique", state=st, language="fr-CA")
+    assert r["status"] == "ok"
+    assert r["data"]["autopay_enrolled"] is True
+    assert r["data"]["status"] == "actif"
+
+
+
 
 
 

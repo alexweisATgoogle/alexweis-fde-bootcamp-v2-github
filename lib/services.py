@@ -285,6 +285,7 @@ def lookup_account_impl(
     raw_ident = str(phone_or_account or "").strip()
     if raw_ident.lower() in ("caller_line_id", "current_line", "ani"):
         account = dict(ACCOUNTS[0])
+        account["first_name"] = ""  # Prevent caller-name hallucination on CLID lookup
     elif not raw_ident:
         if lang.startswith("fr"):
             return error_reply(
@@ -384,6 +385,8 @@ def lookup_account_impl(
         w in str(state.get("last_user_utterance", "")).lower() for w in ("business", "entreprise", "commercial")
     )
     if is_biz:
+        raw_status = account.get("status", "active")
+        localized_status = ("actif" if raw_status == "active" else "suspendu") if lang.startswith("fr") else raw_status
         state["business_flag"] = True
         state["handoff_reason"] = "business_handoff"
         b_msg = spoken_line("business_handoff", lang)
@@ -394,7 +397,7 @@ def lookup_account_impl(
                 "first_name": account.get("first_name", ""),
                 "phone_last4": account["phone"][-4:],
                 "caller_provided_phone_last4": state["caller_provided_phone_last4"],
-                "account_status": account.get("status", "active"),
+                "account_status": localized_status,
                 "business_flag": True,
                 "handoff_message": b_msg,
             },
@@ -403,13 +406,15 @@ def lookup_account_impl(
             spoken_summary="Compte d'affaires identifié." if lang.startswith("fr") else "Business account identified.",
         )
 
+    raw_status = account.get("status", "active")
+    localized_status = ("actif" if raw_status == "active" else "suspendu") if lang.startswith("fr") else raw_status
     return ok_reply(
         {
             "account_id": account["account_id"],
             "first_name": account.get("first_name", ""),
             "phone_last4": account["phone"][-4:],
             "caller_provided_phone_last4": state["caller_provided_phone_last4"],
-            "account_status": account.get("status", "active"),
+            "account_status": localized_status,
         },
         reference,
         language=lang,
@@ -660,14 +665,7 @@ def check_secret_pin_impl(
             },
             language=lang,
         )
-    if state.get("auth_status") == "pass":
-        state["logged_in"] = True
-        return ok_reply(
-            {"verified": True, "logged_in": True},
-            reference,
-            language=lang,
-            spoken_summary=spoken_line("pin_verified", lang),
-        )
+    is_step_up = bool(state.get("logged_in") or state.get("auth_status") == "pass")
     failures = max(
         read_count(state, "pin_failure_count"),
         read_count(state, "auth_failure_count"),
@@ -694,7 +692,7 @@ def check_secret_pin_impl(
             reference,
             language=lang,
         )
-    if not secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_PIN_ATTEMPTS):
+    if not secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_PIN_ATTEMPTS, is_step_up=is_step_up):
         failures += 1
         state["pin_failure_count"] = failures
         state["auth_failure_count"] = failures
@@ -888,6 +886,10 @@ def submit_request_impl(
         "payer_facture": "pay_bill",
         "contester_facture": "dispute_charge",
         "notification_panne": "outage_notification",
+        "adhesion_paiement_automatique": "enroll_autopay",
+        "adhésion_paiement_automatique": "enroll_autopay",
+        "paiement_preautorise": "enroll_autopay",
+        "paiement_préautorisé": "enroll_autopay",
     }
     if clean_action in french_action_map:
         clean_action = french_action_map[clean_action]
@@ -1082,15 +1084,17 @@ def submit_request_impl(
         eta = "D'ici 24 heures" if lang.startswith("fr") else ticket["eta"]
         if lang.startswith("fr"):
             status_lbl = "en_cours" if ticket["status"] in ("in_progress", "en_cours") else ("ouvert" if ticket["status"] == "open" else ticket["status"])
+            stype_lbl = "internet_haute_vitesse" if ticket["service_type"] in ("broadband", "internet") else ticket["service_type"]
         else:
             status_lbl = ticket["status"]
+            stype_lbl = ticket["service_type"]
         return ok_reply(
             {
                 "ticket_id": ticket["ticket_id"],
                 "status": status_lbl,
                 "eta": eta,
                 "estimated_resolution_time": eta,
-                "service_type": ticket["service_type"],
+                "service_type": stype_lbl,
                 "description": desc,
             },
             reference,
@@ -1102,14 +1106,24 @@ def submit_request_impl(
     if (clean_action in ("check_appointment", "appointment_status") or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
         acc_id = str(state.get("account_id") or "A1001")
         appt = APPOINTMENTS.get(acc_id, APPOINTMENTS["A1001"])
+        appt_status = appt["status"]
         if lang.startswith("fr"):
+            if appt_status == "delayed":
+                localized_appt_status = "en_retard"
+            elif appt_status == "en_route":
+                localized_appt_status = "en_route"
+            elif appt_status == "completed":
+                localized_appt_status = "complete"
+            else:
+                localized_appt_status = appt_status
             slots_list = ["Demain 08h00 - 12h00", "Demain 13h00 - 17h00", "Après-demain 09h00 - 13h00"]
         else:
+            localized_appt_status = appt_status
             slots_list = [s["display"] for s in AVAILABLE_SLOTS]
         return ok_reply(
             {
                 "appt_id": appt["appt_id"],
-                "status": appt["status"],
+                "status": localized_appt_status,
                 "delayed": appt["delay_minutes"] > 0,
                 "delay_minutes": appt["delay_minutes"],
                 "window": appt["window"],
@@ -1129,6 +1143,7 @@ def submit_request_impl(
         account = find_account(acc_id) if acc_id else None
         past_bal = float(state.get("past_due_balance") or (account.get("past_due_balance", 85.50) if account else 85.50))
         cur_bal = float(state.get("current_balance") or (account.get("current_balance", 85.50) if account else 85.50))
+        bal_status = ("en_attente_de_paiement" if cur_bal > 0 else "paye") if lang.startswith("fr") else ("pending_payment" if cur_bal > 0 else "paid")
         return ok_reply(
             {
                 "current_balance": cur_bal,
@@ -1144,6 +1159,7 @@ def submit_request_impl(
                 "last_payment_amount": 85.50,
                 "last_payment_amount_display": "85.50",
                 "last_payment_date": relative_date(-30),
+                "status": bal_status,
             },
             reference,
             language=lang,
@@ -1346,7 +1362,10 @@ def submit_request_impl(
         plan_amount = round((current_bal - late_fee) / 1.15, 2) if current_bal > 0 else 0.0
         taxes_and_fees = round(current_bal - late_fee - plan_amount, 2) if current_bal > 0 else 0.0
         card_on_file = str(state.get("card_last4") or (account.get("card_last4") if account else "7742") or "7742")
-        status_val = ("solde_crediteur" if lang.startswith("fr") else "credit_balance") if is_credit else ("pending_payment" if current_bal > 0 else "paid")
+        if is_credit:
+            status_val = "solde_crediteur" if lang.startswith("fr") else "credit_balance"
+        else:
+            status_val = ("en_attente_de_paiement" if current_bal > 0 else "paye") if lang.startswith("fr") else ("pending_payment" if current_bal > 0 else "paid")
         return ok_reply(
             {
                 "balance": current_bal,
@@ -1682,9 +1701,9 @@ def submit_request_impl(
                     "amount_display": display_amount(dispute_amt),
                     "days": refund_days,
                     "days_display": str(refund_days),
-                    "adjustment_type": "overpayment_refund",
+                    "adjustment_type": "remboursement_trop_percu" if lang.startswith("fr") else "overpayment_refund",
                     "refund_destination": "crédit sur le prochain relevé" if lang.startswith("fr") else "statement_credit",
-                    "status_code": "approved",
+                    "status_code": "approuve" if lang.startswith("fr") else "approved",
                 },
                 reference,
                 language=lang,
@@ -1725,9 +1744,9 @@ def submit_request_impl(
                 "amount_display": display_amount(dispute_amt),
                 "days": refund_days,
                 "days_display": str(refund_days),
-                "adjustment_type": "courtesy_credit",
+                "adjustment_type": "credit_de_courtoisie" if lang.startswith("fr") else "courtesy_credit",
                 "refund_destination": "crédit sur le prochain relevé" if lang.startswith("fr") else "statement_credit",
-                "status_code": "approved",
+                "status_code": "approuve" if lang.startswith("fr") else "approved",
             },
             reference,
             language=lang,
@@ -1794,7 +1813,9 @@ def submit_request_impl(
         )
 
     # 12. Autopay Setup
-    if clean_action == "enroll_autopay" or any(k in low for k in ("autopay", "automatic payment", "paiement automatique", "prélèvement automatique")):
+    if clean_action in ("enroll_autopay", "autopay", "setup_autopay") or any(
+        k in low for k in ("autopay", "automatic payment", "pre-authorized", "preauthorized", "préautorisé", "preautorise", "paiement automatique", "prélèvement automatique")
+    ):
         bank_keywords = (
             "bancaire", "banque", "bank", "checking", "chequing", "chèque", "cheque",
             "compte bancaire", "compte de chèque", "compte de cheque", "compte courant",
@@ -1826,6 +1847,11 @@ def submit_request_impl(
                 "card_last4": c_digits[-4:] if not is_bank else "",
                 "discount": discount_val,
                 "discount_display": discount_disp,
+                "monthly_discount": discount_val,
+                "monthly_discount_display": discount_disp,
+                "reference": reference,
+                "tracking_id": reference,
+                "status": "actif" if lang.startswith("fr") else "active",
             },
             reference,
             language=lang,
@@ -1881,7 +1907,7 @@ def submit_request_impl(
                 "port_in_submitted": True,
                 "transfer_reference": port_ref,
                 "tracking_id": port_ref,
-                "status": "pending_carrier_release",
+                "status": "en_attente_de_liberation" if lang.startswith("fr") else "pending_carrier_release",
                 "porting_window": porting_window,
                 "active_until_cutover": True,
                 "keep_current_service_active": True,
@@ -2085,7 +2111,7 @@ def submit_request_impl(
                     "upgrade_confirmed": True,
                     "effective_date": "immédiatement" if lang.startswith("fr") else "immediately",
                     "effective_timing": "immédiatement" if lang.startswith("fr") else "immediately",
-                    "taxes_note": "plus les taxes applicables" if lang.startswith("fr") else "plus applicable taxes",
+                    "taxes_note": "taxes applicables en sus" if lang.startswith("fr") else "plus applicable taxes",
                     "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
                     "status": "active",
                 },
@@ -2125,7 +2151,7 @@ def submit_request_impl(
                 "count": len(curated),
                 "activation_fee": 0.0,
                 "activation_fee_display": "0.00",
-                "overage_policy": "Aucun frais de dépassement de données; vitesse réduite à 512 Kbps après la limite" if lang.startswith("fr") else "No data overage fees; speeds throttled to 512 Kbps after limit",
+                "overage_policy": "aucun frais de dépassement de données; vitesse réduite à 512 kbps" if lang.startswith("fr") else "no data overage fees; speeds throttled to 512 kbps",
                 "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
                 "add_ons": roaming_addons,
                 "current_plan": "Forfait mobilité" if lang.startswith("fr") else "Mobility Plan",

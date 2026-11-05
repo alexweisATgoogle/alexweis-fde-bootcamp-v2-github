@@ -50,3 +50,61 @@ def test_keeps_the_spoken_transfer_line_after_a_handover(callback) -> None:
 def test_returns_none_when_nothing_changes(callback) -> None:
     assert callback.after_model_callback(SimpleNamespace(state={}), make_response("All set.")) is None
     assert callback.after_model_callback(SimpleNamespace(state={}), SimpleNamespace(content=None)) is None
+
+
+@pytest.mark.parametrize("callback", CALLBACKS)
+def test_adv_iter9_2_threshold_handover_2_sentence_guarantee(callback) -> None:
+    # 1. State-based dispute_limit_exceeded (English)
+    st_en = {
+        "handover_complete": True,
+        "dispute_limit_exceeded": True,
+        "handoff_reason": "refund_threshold_exceeded",
+        "language": "en-US",
+    }
+    partial_text = "I'll connect you to a billing specialist now."
+    resp_en = make_response(partial_text)
+    out_en = callback.after_model_callback(SimpleNamespace(state=st_en), resp_en)
+    assert out_en is resp_en
+    assert "Disputes exceeding the automated limit require review by a specialist." in resp_en.content.parts[0].text
+    assert partial_text in resp_en.content.parts[0].text
+
+    # 2. State-based dispute_limit_exceeded (French)
+    st_fr = {
+        "handover_complete": True,
+        "dispute_limit_exceeded": True,
+        "handoff_reason": "refund_threshold_exceeded",
+        "language": "fr-CA",
+    }
+    partial_fr = "Je vous transfère à un spécialiste de la facturation maintenant."
+    resp_fr = make_response(partial_fr)
+    out_fr = callback.after_model_callback(SimpleNamespace(state=st_fr), resp_fr)
+    assert out_fr is resp_fr
+    assert "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste." in resp_fr.content.parts[0].text
+    assert partial_fr in resp_fr.content.parts[0].text
+
+    # 3. Same-turn function_call to handover_to_person with refund_threshold_exceeded
+    resp_fc = SimpleNamespace(
+        content=SimpleNamespace(
+            parts=[
+                SimpleNamespace(text="I'll transfer you now."),
+                SimpleNamespace(
+                    text=None,
+                    function_call=SimpleNamespace(
+                        name="handover_to_person",
+                        args={"reason": "refund_threshold_exceeded", "language": "en-US"},
+                    ),
+                ),
+            ]
+        )
+    )
+    st_fc = {"language": "en-US"}
+    out_fc = callback.after_model_callback(SimpleNamespace(state=st_fc), resp_fc)
+    assert out_fc is resp_fc
+    assert "Disputes exceeding the automated limit require review by a specialist." in resp_fc.content.parts[0].text
+
+    # 4. Spoken text already contains explanation -> not duplicated
+    full_text = "Disputes exceeding the automated limit require review by a specialist. Transferring you."
+    resp_full = make_response(full_text)
+    out_full = callback.after_model_callback(SimpleNamespace(state=st_en), resp_full)
+    assert resp_full.content.parts[0].text == full_text
+

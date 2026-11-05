@@ -863,6 +863,7 @@ def lookup_account_impl(  # pragma: no cover
     raw_ident = str(phone_or_account or "").strip()
     if raw_ident.lower() in ("caller_line_id", "current_line", "ani"):
         account = dict(ACCOUNTS[0])
+        account["first_name"] = ""  # Prevent caller-name hallucination on CLID lookup
     elif not raw_ident:
         if lang.startswith("fr"):
             return error_reply(
@@ -962,6 +963,8 @@ def lookup_account_impl(  # pragma: no cover
         w in str(state.get("last_user_utterance", "")).lower() for w in ("business", "entreprise", "commercial")
     )
     if is_biz:
+        raw_status = account.get("status", "active")
+        localized_status = ("actif" if raw_status == "active" else "suspendu") if lang.startswith("fr") else raw_status
         state["business_flag"] = True
         state["handoff_reason"] = "business_handoff"
         b_msg = spoken_line("business_handoff", lang)
@@ -972,7 +975,7 @@ def lookup_account_impl(  # pragma: no cover
                 "first_name": account.get("first_name", ""),
                 "phone_last4": account["phone"][-4:],
                 "caller_provided_phone_last4": state["caller_provided_phone_last4"],
-                "account_status": account.get("status", "active"),
+                "account_status": localized_status,
                 "business_flag": True,
                 "handoff_message": b_msg,
             },
@@ -981,13 +984,15 @@ def lookup_account_impl(  # pragma: no cover
             spoken_summary="Compte d'affaires identifié." if lang.startswith("fr") else "Business account identified.",
         )
 
+    raw_status = account.get("status", "active")
+    localized_status = ("actif" if raw_status == "active" else "suspendu") if lang.startswith("fr") else raw_status
     return ok_reply(
         {
             "account_id": account["account_id"],
             "first_name": account.get("first_name", ""),
             "phone_last4": account["phone"][-4:],
             "caller_provided_phone_last4": state["caller_provided_phone_last4"],
-            "account_status": account.get("status", "active"),
+            "account_status": localized_status,
         },
         reference,
         language=lang,

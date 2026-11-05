@@ -231,7 +231,7 @@ def resolve_postal_code_region(postal_code: str) -> str:
     if len(clean) >= 4 and clean[3].isdigit():
         return "Region-A" if int(clean[3]) % 2 == 0 else "Region-B"
     if len(clean) >= 2 and clean[1].isdigit():
-        return "Region-A" if int(clean[1]) % 2 == 1 else "Region-B"
+        return "Region-A" if int(clean[1]) % 2 == 0 else "Region-B"
     return "Region-A"
 
 
@@ -771,10 +771,16 @@ def login_code_accepted(code_digits: Any, attempts: int = 0, max_attempts: int =
     return True
 
 
-def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:
+def secret_pin_accepted(
+    pin_digits: Any,
+    attempts: int = 0,
+    max_attempts: int = 3,
+    is_step_up: bool = False,
+) -> bool:
     """Whether the fake login service accepts a secret PIN.
 
     Under the 3-attempt PIN ladder:
+      - Step-up authentication (is_step_up=True): only pins in VALID_PINS are accepted.
       - Attempt 1 (attempts == 0): any 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 2 (attempts == 1): any valid 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
@@ -786,4 +792,6 @@ def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 
         return False
     if attempts >= max(max_attempts - 1, 1):
         return False
+    if is_step_up:
+        return digits in VALID_PINS
     return True

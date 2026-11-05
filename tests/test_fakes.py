@@ -116,6 +116,19 @@ def test_resolve_postal_code_region_generic_sectors() -> None:
     # Odd sector digit (index 3) -> Region-B (normal operation)
     assert resolve_postal_code_region("K1A 1B1") == "Region-B"
     assert resolve_postal_code_region("A1A 1B1") == "Region-B"
+    # 3-char FSA fallback (index 1) with generic synthetic codes (0 hits in bench/dev)
+    assert resolve_postal_code_region("K2P") == "Region-A"
+    assert resolve_postal_code_region("K1P") == "Region-B"
+
+
+def test_secret_pin_step_up_validation() -> None:
+    # Initial login lenient
+    assert secret_pin_accepted("7731", attempts=0, is_step_up=False) is True
+    # Step-up accepts only VALID_PINS
+    assert secret_pin_accepted("5903", attempts=0, is_step_up=True) is True
+    assert secret_pin_accepted("5678", attempts=0, is_step_up=True) is True
+    assert secret_pin_accepted("7731", attempts=0, is_step_up=True) is False
+    assert secret_pin_accepted("7422", attempts=0, is_step_up=True) is False
 
 
 def test_synthesized_account_payment_ledger() -> None:

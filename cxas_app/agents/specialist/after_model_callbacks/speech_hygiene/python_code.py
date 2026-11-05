@@ -28,17 +28,6 @@ def after_model_callback(
         return None
     changed = False
     has_spoken_text = False
-
-    for part in parts:
-        text = getattr(part, "text", None)
-        if not isinstance(text, str) or not text.strip():
-            continue
-        has_spoken_text = True
-        cleaned = clean_agent_speech(clean_speech(text), state_dict)
-        if cleaned != text:
-            part.text = cleaned
-            changed = True
-
     has_handover_call = False
     handover_reason = ""
     handover_lang = state_dict.get("language") or ""
@@ -52,8 +41,27 @@ def after_model_callback(
                 handover_lang = str(fc_args.get("language") or handover_lang)
             break
 
+    effective_state = dict(state_dict)
+    if has_handover_call:
+        effective_state["handover_complete"] = True
+        if handover_reason:
+            effective_state["handoff_reason"] = handover_reason
+        if handover_lang:
+            effective_state["language"] = handover_lang
+
+    for part in parts:
+        text = getattr(part, "text", None)
+        if not isinstance(text, str) or not text.strip():
+            continue
+        has_spoken_text = True
+        cleaned = clean_agent_speech(clean_speech(text), state_dict)
+        cleaned = enforce_handover_utterance(cleaned, effective_state)
+        if cleaned != text:
+            part.text = cleaned
+            changed = True
+
     if not has_spoken_text:
-        handoff_msg = enforce_handover_utterance("", state_dict).strip()
+        handoff_msg = enforce_handover_utterance("", effective_state).strip()
         if not handoff_msg and has_handover_call:
             handoff_msg = resolve_handover_fallback(handover_reason, handover_lang, state_dict).strip()
         if handoff_msg and isinstance(parts, list):
@@ -142,18 +150,49 @@ def enforce_handover_utterance(  # pragma: no cover
     text: str,
     session_params: dict[str, Any] | None = None,
 ) -> str:
-    """Fill an empty handover turn with handoff_message; leave spoken text alone.
+    """Ensure handover turns contain required disclosures; fill empty replies.
 
-    After handover_to_person ran (handover_complete is True), a reply with no
-    spoken text gets the localized handoff_message. Text the model did speak is
-    returned unchanged, so a step-specific or PRD-exact transfer line survives.
+    After handover_to_person ran (or during an over-threshold dispute escalation),
+    an empty reply receives the localized handoff_message. If the model spoke a
+    partial reply missing the required explanation sentence on an over-threshold
+    dispute, prepend the explanation sentence to ensure both sentences are spoken.
     """
-    if (text or "").strip():
+    clean_text = (text or "").strip()
+    if not isinstance(session_params, dict):
         return text
-    if not isinstance(session_params, dict) or not session_params.get("handover_complete"):
+
+    is_handover = bool(
+        session_params.get("handover_complete")
+        or session_params.get("dispute_limit_exceeded")
+        or session_params.get("handoff_reason") == "refund_threshold_exceeded"
+    )
+    if not is_handover:
         return text
+
     handoff_msg = str(session_params.get("handoff_message") or "").strip()
-    return handoff_msg or text
+    if not clean_text:
+        return handoff_msg or text
+
+    # Over-threshold refund/dispute 2-sentence guarantee
+    is_threshold = bool(session_params.get("dispute_limit_exceeded")) or (
+        session_params.get("handoff_reason") == "refund_threshold_exceeded"
+    )
+    if is_threshold:
+        low = clean_text.lower()
+        if (
+            "exceeding the automated limit" not in low
+            and "dépassant la limite automatisée" not in low
+            and "depassant la limite automatisee" not in low
+        ):
+            lang = str(session_params.get("language") or "")
+            prefix = (
+                "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. "
+                if lang.startswith("fr")
+                else "Disputes exceeding the automated limit require review by a specialist. "
+            )
+            return prefix + clean_text
+
+    return text
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {

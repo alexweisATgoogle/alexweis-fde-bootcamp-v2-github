@@ -591,10 +591,16 @@ def ok_reply(  # pragma: no cover
             reply[key] = payload[key]
     return reply
 
-def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover
+def secret_pin_accepted(  # pragma: no cover
+    pin_digits: Any,
+    attempts: int = 0,
+    max_attempts: int = 3,
+    is_step_up: bool = False,
+) -> bool:
     """Whether the fake login service accepts a secret PIN.
 
     Under the 3-attempt PIN ladder:
+      - Step-up authentication (is_step_up=True): only pins in VALID_PINS are accepted.
       - Attempt 1 (attempts == 0): any 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 2 (attempts == 1): any valid 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
@@ -606,6 +612,8 @@ def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 
         return False
     if attempts >= max(max_attempts - 1, 1):
         return False
+    if is_step_up:
+        return digits in VALID_PINS
     return True
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover

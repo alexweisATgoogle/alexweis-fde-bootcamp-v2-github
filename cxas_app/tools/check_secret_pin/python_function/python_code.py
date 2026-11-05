@@ -567,10 +567,18 @@ ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
     {c * n for c in ("0", "1", "9") for n in (4, 6)} | {c * 4 for c in ("2", "8")}
 )
 
-def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 3) -> bool:  # pragma: no cover
+VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})  # pragma: no cover
+
+def secret_pin_accepted(  # pragma: no cover
+    pin_digits: Any,
+    attempts: int = 0,
+    max_attempts: int = 3,
+    is_step_up: bool = False,
+) -> bool:
     """Whether the fake login service accepts a secret PIN.
 
     Under the 3-attempt PIN ladder:
+      - Step-up authentication (is_step_up=True): only pins in VALID_PINS are accepted.
       - Attempt 1 (attempts == 0): any 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 2 (attempts == 1): any valid 4- to 6-digit PIN not in ALWAYS_WRONG_LOGIN_CODES.
       - Attempt 3 (attempts >= max_attempts - 1): always False (lockout triggered).
@@ -582,6 +590,8 @@ def secret_pin_accepted(pin_digits: Any, attempts: int = 0, max_attempts: int = 
         return False
     if attempts >= max(max_attempts - 1, 1):
         return False
+    if is_step_up:
+        return digits in VALID_PINS
     return True
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
@@ -812,14 +822,7 @@ def check_secret_pin_impl(  # pragma: no cover
             },
             language=lang,
         )
-    if state.get("auth_status") == "pass":
-        state["logged_in"] = True
-        return ok_reply(
-            {"verified": True, "logged_in": True},
-            reference,
-            language=lang,
-            spoken_summary=spoken_line("pin_verified", lang),
-        )
+    is_step_up = bool(state.get("logged_in") or state.get("auth_status") == "pass")
     failures = max(
         read_count(state, "pin_failure_count"),
         read_count(state, "auth_failure_count"),
@@ -846,7 +849,7 @@ def check_secret_pin_impl(  # pragma: no cover
             reference,
             language=lang,
         )
-    if not secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_PIN_ATTEMPTS):
+    if not secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_PIN_ATTEMPTS, is_step_up=is_step_up):
         failures += 1
         state["pin_failure_count"] = failures
         state["auth_failure_count"] = failures

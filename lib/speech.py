@@ -84,18 +84,49 @@ def enforce_handover_utterance(
     text: str,
     session_params: dict[str, Any] | None = None,
 ) -> str:
-    """Fill an empty handover turn with handoff_message; leave spoken text alone.
+    """Ensure handover turns contain required disclosures; fill empty replies.
 
-    After handover_to_person ran (handover_complete is True), a reply with no
-    spoken text gets the localized handoff_message. Text the model did speak is
-    returned unchanged, so a step-specific or PRD-exact transfer line survives.
+    After handover_to_person ran (or during an over-threshold dispute escalation),
+    an empty reply receives the localized handoff_message. If the model spoke a
+    partial reply missing the required explanation sentence on an over-threshold
+    dispute, prepend the explanation sentence to ensure both sentences are spoken.
     """
-    if (text or "").strip():
+    clean_text = (text or "").strip()
+    if not isinstance(session_params, dict):
         return text
-    if not isinstance(session_params, dict) or not session_params.get("handover_complete"):
+
+    is_handover = bool(
+        session_params.get("handover_complete")
+        or session_params.get("dispute_limit_exceeded")
+        or session_params.get("handoff_reason") == "refund_threshold_exceeded"
+    )
+    if not is_handover:
         return text
+
     handoff_msg = str(session_params.get("handoff_message") or "").strip()
-    return handoff_msg or text
+    if not clean_text:
+        return handoff_msg or text
+
+    # Over-threshold refund/dispute 2-sentence guarantee
+    is_threshold = bool(session_params.get("dispute_limit_exceeded")) or (
+        session_params.get("handoff_reason") == "refund_threshold_exceeded"
+    )
+    if is_threshold:
+        low = clean_text.lower()
+        if (
+            "exceeding the automated limit" not in low
+            and "dépassant la limite automatisée" not in low
+            and "depassant la limite automatisee" not in low
+        ):
+            lang = str(session_params.get("language") or "")
+            prefix = (
+                "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. "
+                if lang.startswith("fr")
+                else "Disputes exceeding the automated limit require review by a specialist. "
+            )
+            return prefix + clean_text
+
+    return text
 
 
 def resolve_handover_fallback(
