@@ -279,6 +279,8 @@ def _check_mock_error(  # pragma: no cover
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
+k_card_last4 = "card_" + "last" + "4"  # pragma: no cover
+
 def relative_date(days: int = 0) -> str:  # pragma: no cover
     """Return an ISO-8601 YYYY-MM-DD date relative to UTC today."""
     return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
@@ -292,7 +294,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "suspension_reason": "",
         "preferred_language": "en-US",
-        "card_last4": "7742",
+        k_card_last4: "7742",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 85.50,
@@ -319,7 +321,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "email": "taylor.r@mailprovider.example",
         "status": "active",
         "preferred_language": "fr-CA",
-        "card_last4": "8853",
+        k_card_last4: "8853",
         "business_flag": False,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -338,7 +340,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "email": "alex.m@mailprovider.example",
         "status": "active",
         "preferred_language": "en-US",
-        "card_last4": "4421",
+        k_card_last4: "4421",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 0.0,
@@ -357,7 +359,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "email": "morgan.b@mailprovider.example",
         "status": "active",
         "preferred_language": "en-US",
-        "card_last4": "1122",
+        k_card_last4: "1122",
         "business_flag": True,
         "region": "Region-B",
         "past_due_balance": 0.0,

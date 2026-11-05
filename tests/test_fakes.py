@@ -152,4 +152,40 @@ def test_secret_pin_accepted_length_restriction() -> None:
     assert secret_pin_accepted("123", attempts=0) is False
 
 
+def test_adv_iter7_1_normalize_label_prefix() -> None:
+    res = normalize_identifier("phone: 202-555-0186")
+    assert res["kind"] == "phone"
+    assert res["value"] == "2025550186"
+
+    res_fr = normalize_identifier("numéro: 202-555-0186")
+    assert res_fr["kind"] == "phone"
+    assert res_fr["value"] == "2025550186"
+
+    acc = find_account("phone: 202-555-0186")
+    assert acc is not None
+    assert acc["account_id"] == "A1001"
+
+
+def test_acc_identifier_normalization_and_synthesis() -> None:
+    res1 = normalize_identifier("ACC-10200")
+    assert res1["kind"] == "account"
+    assert res1["value"] == "ACC-10200"
+
+    acc1 = find_account("ACC-10200")
+    assert acc1 is not None
+    assert acc1["account_id"] == "ACC-10200"
+    assert acc1["status"] == "active"
+    assert "current_plan" in acc1
+    assert len(acc1["payment_ledger"]) >= 1
+
+    res2 = normalize_identifier("ACC-30400")
+    assert res2["kind"] == "account"
+    assert res2["value"] == "ACC-30400"
+
+    acc2 = find_account("ACC-30400")
+    assert acc2 is not None
+    assert acc2["account_id"] == "ACC-30400"
+
+
+
 

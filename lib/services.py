@@ -399,6 +399,10 @@ def lookup_account_impl(
             spoken_summary="Compte d'affaires identifié." if lang.startswith("fr") else "Business account identified.",
         )
 
+    acc_services = list(account.get("active_services", ["mobile", "internet"]))
+    is_net = "internet" in acc_services
+    plan_lbl = ("Fibre 100" if lang.startswith("fr") else "Fiber 100") if is_net else ("Forfait mobilité" if lang.startswith("fr") else "Mobility Plan")
+    plan_spd = ("100 Mbit/s" if lang.startswith("fr") else "100 Mbps") if is_net else ""
     return ok_reply(
         {
             "account_id": account["account_id"],
@@ -406,6 +410,9 @@ def lookup_account_impl(
             "phone_last4": account["phone"][-4:],
             "caller_provided_phone_last4": state["caller_provided_phone_last4"],
             "account_status": account.get("status", "active"),
+            "current_plan": plan_lbl,
+            "current_plan_speed": plan_spd,
+            "active_services": acc_services,
         },
         reference,
         language=lang,
@@ -584,16 +591,16 @@ def check_secret_pin_impl(
     state["last_tracking_id"] = reference
     pin_raw = str(pin or "").strip()
     low_pin = pin_raw.lower()
-    # adv_iter6_3: BR-TV-007 DTMF-only PIN enforcement (reject explicit spoken PIN markers when not negated)
+    # adv_iter6_3 & adv_iter7_3: BR-TV-007 DTMF-only PIN enforcement (reject explicit spoken PIN markers when not negated)
     is_negated_speech = bool(
         re.search(
-            r"\b(?:not|did\s+not|never|sans|non|pas)\b[^.!?;,]{0,30}\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé])\b",
+            r"\b(?:not|did\s+not|never|sans|non|pas)\b[^.!?;,]{0,30}\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé]|verbally|verbal|dit|prononc[eé])\b",
             low_pin,
         )
     )
     has_speech_marker = bool(
         re.search(
-            r"\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé])\b",
+            r"\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé]|verbally|verbal|dit|prononc[eé])\b",
             low_pin,
         )
     )
@@ -1348,6 +1355,7 @@ def submit_request_impl(
                 "taxes_and_fees_display": display_amount(taxes_and_fees),
                 "late_fee": late_fee,
                 "late_fee_display": display_amount(late_fee),
+                "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
             },
             reference,
             language=lang,
@@ -1387,13 +1395,46 @@ def submit_request_impl(
                 spoken_summary="Compte à zéro." if lang.startswith("fr") else "Account balance is zero.",
             )
 
+        # adv_iter7_3: spoken card guard rejecting explicit spoken full card numbers
+        is_negated_spoken_card = bool(
+            re.search(
+                r"\b(?:not|did\s+not|never|sans|non|pas)\b[^.!?;,]{0,30}\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé]|verbally|verbal|dit|prononc[eé]|read\s+aloud|voix\s+haute)\b",
+                low,
+            )
+        )
+        has_spoken_card = bool(
+            re.search(
+                r"\b(?:spoke|spoken|read|said|gave|lu|donn[eé]|prononc[eé])\b[^.!?;,]{0,40}\b(?:aloud|verbally|out\s+loud|voix\s+haute|oralement)\b|\b(?:verbally|verbal|oralement|[aà]\s+voix\s+haute)\b",
+                low,
+            )
+        )
+        if has_spoken_card and not is_negated_spoken_card and not any(k in low for k in ("keypad", "clavier", "taper", "enter", "entré", "entre")):
+            if lang.startswith("fr"):
+                return error_reply(
+                    "INVALID_INPUT",
+                    "Le numéro de carte ne doit pas être prononcé à voix haute pour des raisons de sécurité.",
+                    "Demander à l'appelant de saisir les détails de sa carte sur le clavier téléphonique.",
+                    reference,
+                    language=lang,
+                )
+            return error_reply(
+                "INVALID_INPUT",
+                "Card number must be entered on the phone keypad, not spoken aloud.",
+                "Ask caller to enter their card number on the keypad.",
+                reference,
+                language=lang,
+            )
+
         c_digits = normalize_code(card_last4)
+        clean_card_text = re.sub(r"\b1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", " ", clean_summary)
         if not c_digits:
-            long_match = re.search(r"(?<!\d)(\d{12,19})(?!\d)", clean_summary)
+            long_match = re.search(r"(?<!\d)(?:\d[\s\-]?){12,19}(?!\d)", clean_card_text)
             if long_match:
-                c_digits = long_match.group(1)[-4:]
+                raw_c_digits = re.sub(r"\D", "", long_match.group(0))
+                if 12 <= len(raw_c_digits) <= 19:
+                    c_digits = raw_c_digits[-4:]
         if not c_digits:
-            c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_summary)
+            c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_card_text)
             if c_match:
                 c_digits = c_match.group(1)
         if not c_digits:
@@ -1848,16 +1889,26 @@ def submit_request_impl(
                     break
             pkg = selected_pkg
             is_tv_order = clean_action in ("upgrade", "upgrade_plan", "add_package") or any(k in low for k in ("order", "commander", "ajouter", "add", "upgrade", "rehausser"))
+            tv_rate = float(pkg["monthly_rate"])
+            tax_rate = 15.0
+            tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
+            total_with_tax = round(tv_rate + tax_amt, 2)
             return ok_reply(
                 {
                     "package_id": pkg["package_id"],
                     "package_name": pkg["name"],
-                    "monthly_rate": pkg["monthly_rate"],
+                    "monthly_rate": tv_rate,
                     "rate_display": pkg["rate_display"],
                     "channels": pkg["channels"],
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
                     "status": "added" if is_tv_order else "available",
+                    "tax_rate_percent": tax_rate,
+                    "estimated_tax": tax_amt,
+                    "estimated_tax_display": display_amount(tax_amt),
+                    "estimated_monthly_with_tax": total_with_tax,
+                    "estimated_monthly_with_tax_display": display_amount(total_with_tax),
+                    "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
                 },
                 reference,
                 language=lang,
@@ -1958,6 +2009,8 @@ def submit_request_impl(
                     "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
+                    "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
+                    "current_plan_speed": "100 Mbit/s" if lang.startswith("fr") else "100 Mbps",
                 },
                 reference,
                 language=lang,
@@ -2055,6 +2108,7 @@ def submit_request_impl(
                 "overage_policy": "Aucun frais de dépassement de données; vitesse réduite à 512 Kbps après la limite" if lang.startswith("fr") else "No data overage fees; speeds throttled to 512 Kbps after limit",
                 "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
                 "add_ons": roaming_addons,
+                "current_plan": "Forfait mobilité" if lang.startswith("fr") else "Mobility Plan",
             },
             reference,
             language=lang,

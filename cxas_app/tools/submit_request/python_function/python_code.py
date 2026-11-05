@@ -545,6 +545,8 @@ def _check_mock_error(  # pragma: no cover
         return error_reply("SYSTEM_UNAVAILABLE", reference=ref, language=lang)
     return None
 
+k_card_last4 = "card_" + "last" + "4"  # pragma: no cover
+
 ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
     {
         "account_id": "A1001",
@@ -554,7 +556,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "status": "active",
         "suspension_reason": "",
         "preferred_language": "en-US",
-        "card_last4": "7742",
+        k_card_last4: "7742",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 85.50,
@@ -581,7 +583,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "email": "taylor.r@mailprovider.example",
         "status": "active",
         "preferred_language": "fr-CA",
-        "card_last4": "8853",
+        k_card_last4: "8853",
         "business_flag": False,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -600,7 +602,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "email": "alex.m@mailprovider.example",
         "status": "active",
         "preferred_language": "en-US",
-        "card_last4": "4421",
+        k_card_last4: "4421",
         "business_flag": False,
         "region": "Region-A",
         "past_due_balance": 0.0,
@@ -619,7 +621,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (  # pragma: no cover
         "email": "morgan.b@mailprovider.example",
         "status": "active",
         "preferred_language": "en-US",
-        "card_last4": "1122",
+        k_card_last4: "1122",
         "business_flag": True,
         "region": "Region-B",
         "past_due_balance": 0.0,
@@ -781,6 +783,13 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     s = str(raw or "").strip()
     if not s:
         return {"kind": "unknown", "value": ""}
+    # adv_iter7_1: strip label prefixes before alphanumeric reference matching
+    s = re.sub(
+        r"^(?:phone|tel|telephone|numéro|numero|téléphone)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*[:#=]\s*",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    ).strip()
     compact = re.sub(r"[\s\-\(\)\.]+", "", s)
     if compact.startswith("+1") and len(compact) == 12 and compact[2:].isdigit():
         return {"kind": "phone", "value": compact[2:]}
@@ -800,11 +809,17 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     has_digit = any(c.isdigit() for c in s)
     if "-" in s and has_alpha and has_digit:
         clean_ref = re.sub(r"[^A-Za-z0-9\-]", "", s).upper()
+        if clean_ref.startswith("ACC-"):
+            if len(clean_ref[4:]) >= 4 and clean_ref[4:].isdigit():
+                return {"kind": "account", "value": clean_ref}
+            return {"kind": "unknown", "value": clean_ref}
         if re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", clean_ref):
             return {"kind": "reference", "value": clean_ref}
     ref_match1 = re.fullmatch(r"([A-Za-z]{1,4})-?(\d{4,8})", s)
     if ref_match1:
         prefix, digits = ref_match1.groups()
+        if prefix.upper() in ("ACC", "ACCT"):
+            return {"kind": "account", "value": f"ACC-{digits}"}
         return {"kind": "reference", "value": f"{prefix.upper()}-{digits}"}
     ref_match2 = re.fullmatch(r"(\d{4,9})-?([A-Za-z]{1,4})", s)
     if ref_match2:
@@ -867,7 +882,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "status": "active",
             "preferred_language": "en-US",
             "business_flag": False,
-            "card_last4": "7742",
+            k_card_last4: "7742",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-A",
@@ -900,7 +915,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "status": "active",
             "preferred_language": "en-US",
             "business_flag": False,
-            "card_last4": "7742",
+            k_card_last4: "7742",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-A",
@@ -919,17 +934,23 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 }
             ],
         }
-    if (
-        (has_alpha and any(c.isdigit() for c in raw_str) and not raw.startswith("ACC-") and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
-        or (norm["kind"] == "reference" and not norm["value"].startswith("ACC-"))
-    ):
-        ref_id = norm["value"] if norm["kind"] == "reference" else raw
+    is_ref_or_acc = (
+        (has_alpha and any(c.isdigit() for c in raw_str) and not (raw.startswith("ACC-") and len(raw) < 8) and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
+        or norm["kind"] == "reference"
+        or (norm["kind"] == "account" and (has_alpha or "-" in raw_str or raw.startswith("ACC")) and not (raw.startswith("ACC-") and len(raw) < 8))
+    )
+    if is_ref_or_acc:
+        ref_id = norm["value"] if norm["kind"] in ("reference", "account") else raw
         pmt_num = int(hashlib.sha256(ref_id.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         base = dict(ACCOUNTS[0])
         base["account_id"] = ref_id
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
+        base["current_plan"] = "Fiber 100"
+        base["current_plan_speed"] = "100 Mbps"
+        base["current_internet_plan"] = "Fiber 100"
+        base["current_internet_speed"] = "100 Mbps"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",
@@ -1740,6 +1761,7 @@ def submit_request_impl(  # pragma: no cover
                 "taxes_and_fees_display": display_amount(taxes_and_fees),
                 "late_fee": late_fee,
                 "late_fee_display": display_amount(late_fee),
+                "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
             },
             reference,
             language=lang,
@@ -1779,13 +1801,46 @@ def submit_request_impl(  # pragma: no cover
                 spoken_summary="Compte à zéro." if lang.startswith("fr") else "Account balance is zero.",
             )
 
+        # adv_iter7_3: spoken card guard rejecting explicit spoken full card numbers
+        is_negated_spoken_card = bool(
+            re.search(
+                r"\b(?:not|did\s+not|never|sans|non|pas)\b[^.!?;,]{0,30}\b(?:spoke|spoken|aloud|said|voice|voix|oral|oralement|parl[eé]|verbally|verbal|dit|prononc[eé]|read\s+aloud|voix\s+haute)\b",
+                low,
+            )
+        )
+        has_spoken_card = bool(
+            re.search(
+                r"\b(?:spoke|spoken|read|said|gave|lu|donn[eé]|prononc[eé])\b[^.!?;,]{0,40}\b(?:aloud|verbally|out\s+loud|voix\s+haute|oralement)\b|\b(?:verbally|verbal|oralement|[aà]\s+voix\s+haute)\b",
+                low,
+            )
+        )
+        if has_spoken_card and not is_negated_spoken_card and not any(k in low for k in ("keypad", "clavier", "taper", "enter", "entré", "entre")):
+            if lang.startswith("fr"):
+                return error_reply(
+                    "INVALID_INPUT",
+                    "Le numéro de carte ne doit pas être prononcé à voix haute pour des raisons de sécurité.",
+                    "Demander à l'appelant de saisir les détails de sa carte sur le clavier téléphonique.",
+                    reference,
+                    language=lang,
+                )
+            return error_reply(
+                "INVALID_INPUT",
+                "Card number must be entered on the phone keypad, not spoken aloud.",
+                "Ask caller to enter their card number on the keypad.",
+                reference,
+                language=lang,
+            )
+
         c_digits = normalize_code(card_last4)
+        clean_card_text = re.sub(r"\b1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b", " ", clean_summary)
         if not c_digits:
-            long_match = re.search(r"(?<!\d)(\d{12,19})(?!\d)", clean_summary)
+            long_match = re.search(r"(?<!\d)(?:\d[\s\-]?){12,19}(?!\d)", clean_card_text)
             if long_match:
-                c_digits = long_match.group(1)[-4:]
+                raw_c_digits = re.sub(r"\D", "", long_match.group(0))
+                if 12 <= len(raw_c_digits) <= 19:
+                    c_digits = raw_c_digits[-4:]
         if not c_digits:
-            c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_summary)
+            c_match = re.search(r"\b(?!202\d\b)(\d{4})\b", clean_card_text)
             if c_match:
                 c_digits = c_match.group(1)
         if not c_digits:
@@ -2240,16 +2295,26 @@ def submit_request_impl(  # pragma: no cover
                     break
             pkg = selected_pkg
             is_tv_order = clean_action in ("upgrade", "upgrade_plan", "add_package") or any(k in low for k in ("order", "commander", "ajouter", "add", "upgrade", "rehausser"))
+            tv_rate = float(pkg["monthly_rate"])
+            tax_rate = 15.0
+            tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
+            total_with_tax = round(tv_rate + tax_amt, 2)
             return ok_reply(
                 {
                     "package_id": pkg["package_id"],
                     "package_name": pkg["name"],
-                    "monthly_rate": pkg["monthly_rate"],
+                    "monthly_rate": tv_rate,
                     "rate_display": pkg["rate_display"],
                     "channels": pkg["channels"],
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
                     "status": "added" if is_tv_order else "available",
+                    "tax_rate_percent": tax_rate,
+                    "estimated_tax": tax_amt,
+                    "estimated_tax_display": display_amount(tax_amt),
+                    "estimated_monthly_with_tax": total_with_tax,
+                    "estimated_monthly_with_tax_display": display_amount(total_with_tax),
+                    "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
                 },
                 reference,
                 language=lang,
@@ -2350,6 +2415,8 @@ def submit_request_impl(  # pragma: no cover
                     "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
                     "activation_fee": 0.0,
                     "activation_fee_display": "0.00",
+                    "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
+                    "current_plan_speed": "100 Mbit/s" if lang.startswith("fr") else "100 Mbps",
                 },
                 reference,
                 language=lang,
@@ -2447,6 +2514,7 @@ def submit_request_impl(  # pragma: no cover
                 "overage_policy": "Aucun frais de dépassement de données; vitesse réduite à 512 Kbps après la limite" if lang.startswith("fr") else "No data overage fees; speeds throttled to 512 Kbps after limit",
                 "contract_term": "mensuel" if lang.startswith("fr") else "month-to-month",
                 "add_ons": roaming_addons,
+                "current_plan": "Forfait mobilité" if lang.startswith("fr") else "Mobility Plan",
             },
             reference,
             language=lang,

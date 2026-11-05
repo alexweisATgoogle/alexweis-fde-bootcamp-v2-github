@@ -955,6 +955,63 @@ def test_ve_03_outage_status_structured_field() -> None:
     assert res_clr["data"]["outage_status"] == "clear"
 
 
+def test_adv_iter7_2_spaced_card_and_phone_in_pay_bill() -> None:
+    # Case A: Spaced 16-digit card ending in declined 0000
+    st_decline = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50}
+    res_decline = submit_request_impl(
+        "Caller entered 4532 1111 2222 0000 on keypad",
+        action="pay_bill",
+        state=st_decline,
+    )
+    assert res_decline["status"] == "error"
+    assert res_decline["error"] == "CARD_DECLINED"
+
+    # Case B: Phone number in summary does not hijack card_last4 fallback
+    st_saved = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50, "card_last4": "7742"}
+    res_saved = submit_request_impl(
+        "Pay bill for 416-555-0100 using saved card on file",
+        action="pay_bill",
+        state=st_saved,
+    )
+    assert res_saved["status"] == "ok"
+    assert res_saved["data"]["card_last4"] == "7742"
+
+
+def test_adv_iter7_3_spoken_pin_and_card_guard() -> None:
+    st = {"account_id": "A1001", "logged_in": False}
+    # Spoken PIN markers
+    res_sp1 = check_secret_pin_impl("caller verbally gave 5678", state=st, language="en-US")
+    assert res_sp1["status"] == "error"
+    assert res_sp1["error"] == "INVALID_INPUT"
+
+    res_sp2 = check_secret_pin_impl("l'appelant a dit 5678", state=st, language="fr-CA")
+    assert res_sp2["status"] == "error"
+    assert res_sp2["error"] == "INVALID_INPUT"
+
+    # Spoken card guard
+    st_auth = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50}
+    res_card = submit_request_impl(
+        "Caller spoke card 4532111122223333 aloud",
+        action="pay_bill",
+        state=st_auth,
+        language="en-US",
+    )
+    assert res_card["status"] == "error"
+    assert res_card["error"] == "INVALID_INPUT"
+
+
+def test_search_plans_tv_package_tax_fields() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("Add sports TV package", action="search_plans", service_type="tv", state=st)
+    assert res["status"] == "ok"
+    data = res["data"]
+    assert data["tax_rate_percent"] == 15.0
+    assert data["estimated_tax"] == 3.00
+    assert data["estimated_monthly_with_tax"] == 23.00
+    assert "current_plan" in data
+
+
+
 
 
 
