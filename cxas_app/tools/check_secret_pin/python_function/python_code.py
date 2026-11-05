@@ -31,6 +31,7 @@ def check_secret_pin(pin: str | int | float, language: str = "") -> dict[str, An
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+import copy
 import hashlib
 import math
 import re
@@ -829,7 +830,15 @@ def check_secret_pin_impl(  # pragma: no cover
             },
             language=lang,
         )
-    is_step_up = bool(state.get("logged_in") or state.get("auth_status") == "pass")
+    is_step_up = bool(
+        state.get("logged_in")
+        or state.get("auth_status") == "pass"
+        or state.get("step_up_active")
+        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "désactiver", "desactiver", "authentification", "security", "2fa", "multi-factor"))
+        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "désactiver", "desactiver", "authentification", "security", "2fa", "multi-factor"))
+    )
+    if is_step_up:
+        state["step_up_active"] = True
     failures = max(
         read_count(state, "pin_failure_count"),
         read_count(state, "auth_failure_count"),
@@ -862,9 +871,11 @@ def check_secret_pin_impl(  # pragma: no cover
         state["auth_failure_count"] = failures
         state["pin_attempts"] = failures
         state["login_attempts"] = failures
-        state["logged_in"] = False
+        if not is_step_up:
+            state["logged_in"] = False
         if failures >= MAX_PIN_ATTEMPTS:
             state["auth_status"] = "locked"
+            state["logged_in"] = False
             return locked_reply(reference, failures, lang=lang)
         remaining = MAX_PIN_ATTEMPTS - failures
         if lang.startswith("fr"):

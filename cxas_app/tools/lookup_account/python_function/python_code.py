@@ -32,6 +32,7 @@ def lookup_account(phone_or_account: str | int | float, language: str = "") -> d
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+import copy
 import hashlib
 import math
 import re
@@ -549,13 +550,14 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
 def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
+    raw_str = re.sub(r"^(?:mobile|phone|cell|tel|t[eé]l[eé]phone|num[eé]ro|account|compte)\s*[:=-]\s*", "", raw_str, flags=re.IGNORECASE).strip()
     raw = raw_str.upper()
     if not raw:
         return None
     if raw in _SYNTHESIZED_ACCOUNTS:
-        return dict(_SYNTHESIZED_ACCOUNTS[raw])
+        return copy.deepcopy(_SYNTHESIZED_ACCOUNTS[raw])
     if raw_str in _SYNTHESIZED_ACCOUNTS:
-        return dict(_SYNTHESIZED_ACCOUNTS[raw_str])
+        return copy.deepcopy(_SYNTHESIZED_ACCOUNTS[raw_str])
     k_last4 = "phone_" + "last" + "4"
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
@@ -681,10 +683,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 "status": "cleared",
             }
         ]
-        _SYNTHESIZED_ACCOUNTS[ref_id] = base
-        _SYNTHESIZED_ACCOUNTS[raw_str] = base
-        _SYNTHESIZED_ACCOUNTS[raw] = base
-        return base
+        _SYNTHESIZED_ACCOUNTS[ref_id] = copy.deepcopy(base)
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[ref_id]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[ref_id]
+        return copy.deepcopy(base)
     return None
 
 OK_STATUS = _StatusStr("ok")  # pragma: no cover

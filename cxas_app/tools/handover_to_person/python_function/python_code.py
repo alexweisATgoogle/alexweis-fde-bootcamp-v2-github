@@ -45,6 +45,7 @@ def handover_to_person(
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+import copy
 import hashlib
 import math
 import re

@@ -199,5 +199,28 @@ def test_acc_identifier_normalization_and_synthesis() -> None:
     assert acc2["account_id"] == "ACC-30400"
 
 
+def test_adv_iter11_1_label_prefixed_phone_lookup() -> None:
+    acc_en = find_account("Mobile: 416-555-0101")
+    assert acc_en is not None
+    assert acc_en["account_id"] == "A550101"
+
+    acc_fr = find_account("Téléphone: 613-555-0123")
+    assert acc_fr is not None
+    assert acc_fr["account_id"] == "A550123"
+
+
+def test_adv_iter11_3_find_account_deepcopy_isolation() -> None:
+    acc1 = find_account("ACC-88291")
+    assert acc1 is not None
+    acc1["status"] = "mutated_status"
+    acc1["payment_ledger"].append({"extra": True})
+
+    acc2 = find_account("ACC-88291")
+    assert acc2 is not None
+    assert acc2["status"] == "active"
+    assert len(acc2["payment_ledger"]) == 1
+
+
+
 
 

@@ -95,6 +95,7 @@ def after_model_callback(
 # uses: from lib.speech import clean_agent_speech, clean_speech, enforce_handover_utterance, resolve_handover_fallback
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import copy
 import hashlib
 import re
 
@@ -127,40 +128,6 @@ def strip_markdown(text: str) -> str:  # pragma: no cover
 def clean_speech(text: str) -> str:  # pragma: no cover
     """Everything the speech_hygiene callback does to one piece of reply text."""
     return mask_long_numbers(strip_markdown(text))
-
-def clean_agent_speech(  # pragma: no cover
-    text: str,
-    session_params: dict[str, Any] | None = None,
-) -> str:
-    """Clean markdown and long numbers, and prefer caller_provided_phone_last4 when present."""
-    cleaned = clean_speech(text)
-    if not isinstance(session_params, dict):
-        return cleaned
-    caller_last4 = str(session_params.get("caller_provided_phone_last4") or "").strip()
-    profile_last4 = str(session_params.get("phone_last4") or "").strip()
-    card_last4 = str(session_params.get("card_last4") or "").strip()
-    if len(caller_last4) == 4 and caller_last4.isdigit():
-        if (
-            len(profile_last4) == 4
-            and profile_last4 != caller_last4
-            and profile_last4 != card_last4
-            and profile_last4 in cleaned
-        ):
-            cleaned = re.sub(rf"\b{re.escape(profile_last4)}\b", caller_last4, cleaned)
-
-        def _replace_non_card_last4(m: re.Match[str]) -> str:
-            prefix = cleaned[max(0, m.start() - 35) : m.start()].lower()
-            if any(
-                w in prefix
-                for w in ("card", "carte", "tarjeta", "visa", "mastercard", "amex", "crédit", "credit", "débit", "debit")
-            ):
-                return f"{m.group(1)}{card_last4}" if (len(card_last4) == 4 and card_last4.isdigit()) else m.group(0)
-            if len(card_last4) == 4 and m.group(2) == card_last4:
-                return m.group(0)
-            return f"{m.group(1)}{caller_last4}"
-
-        cleaned = _LAST4_CONTEXT_RE.sub(_replace_non_card_last4, cleaned)
-    return cleaned
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {
@@ -313,6 +280,84 @@ def spoken_line(key: str, language: str | None = "en-US", **slots: object) -> st
         template = template.replace(f"[{slot_name}]", str(slot_val)).replace(f"{{{slot_name}}}", str(slot_val))
     return template
 
+def enforce_outage_utterance(  # pragma: no cover
+    text: str,
+    session_params: dict[str, Any] | None = None,
+) -> str:
+    """Ensure active outage announcements speak all three sentences verbatim."""
+    clean_text = (text or "").strip()
+    if not clean_text:
+        return text
+
+    low = clean_text.lower()
+    is_en_outage = (
+        "active outage in your area" in low
+        or "there's an active outage" in low
+        or "there is an active outage" in low
+    )
+    is_fr_outage = (
+        "panne active dans votre secteur" in low
+        or ("panne active" in low and "secteur" in low)
+    )
+    if not (is_en_outage or is_fr_outage):
+        return text
+
+    # Do not overwrite a dedicated SMS registration confirmation turn
+    if any(k in low for k in ("i've registered", "j'ai inscrit", "j'ai bien noté", "registered text", "registered your number")):
+        return text
+
+    state_dict = session_params if isinstance(session_params, dict) else {}
+    lang = str(state_dict.get("language") or "")
+    if is_fr_outage or lang.startswith("fr"):
+        full_line = spoken_line("outage_active", "fr-CA")
+        has_s2 = "travaillons" in low
+        has_s3 = "texto lorsque" in low or "sera rétabli" in low or "sera retabli" in low
+        if not has_s2 or not has_s3:
+            return full_line
+    else:
+        full_line = spoken_line("outage_active", "en-US")
+        has_s2 = "working on it" in low
+        has_s3 = "text you when" in low or "when it's restored" in low or "when it is restored" in low
+        if not has_s2 or not has_s3:
+            return full_line
+
+    return text
+
+def clean_agent_speech(  # pragma: no cover
+    text: str,
+    session_params: dict[str, Any] | None = None,
+) -> str:
+    """Clean markdown and long numbers, and prefer caller_provided_phone_last4 when present."""
+    cleaned = clean_speech(text)
+    cleaned = enforce_outage_utterance(cleaned, session_params)
+    if not isinstance(session_params, dict):
+        return cleaned
+    caller_last4 = str(session_params.get("caller_provided_phone_last4") or "").strip()
+    profile_last4 = str(session_params.get("phone_last4") or "").strip()
+    card_last4 = str(session_params.get("card_last4") or "").strip()
+    if len(caller_last4) == 4 and caller_last4.isdigit():
+        if (
+            len(profile_last4) == 4
+            and profile_last4 != caller_last4
+            and profile_last4 != card_last4
+            and profile_last4 in cleaned
+        ):
+            cleaned = re.sub(rf"\b{re.escape(profile_last4)}\b", caller_last4, cleaned)
+
+        def _replace_non_card_last4(m: re.Match[str]) -> str:
+            prefix = cleaned[max(0, m.start() - 35) : m.start()].lower()
+            if any(
+                w in prefix
+                for w in ("card", "carte", "tarjeta", "visa", "mastercard", "amex", "crédit", "credit", "débit", "debit")
+            ):
+                return f"{m.group(1)}{card_last4}" if (len(card_last4) == 4 and card_last4.isdigit()) else m.group(0)
+            if len(card_last4) == 4 and m.group(2) == card_last4:
+                return m.group(0)
+            return f"{m.group(1)}{caller_last4}"
+
+        cleaned = _LAST4_CONTEXT_RE.sub(_replace_non_card_last4, cleaned)
+    return cleaned
+
 def enforce_handover_utterance(  # pragma: no cover
     text: str,
     session_params: dict[str, Any] | None = None,
@@ -355,29 +400,27 @@ def enforce_handover_utterance(  # pragma: no cover
             "exceeding the automated limit" in low
             or "dépassant la limite automatisée" in low
             or "depassant la limite automatisee" in low
+            or any(w in low for w in ("exceed", "limit", "dépasse", "depasse", "maximum", "review", "specialized team", "équipe spécialisée", "equipe specialisee"))
         )
-        has_transfer = any(
-            w in low
-            for w in (
-                "transfer",
-                "transfèr",
-                "transfér",
-                "connect",
-                "billing specialist",
-                "specialist now",
-                "spécialiste de la facturation",
-                "specialiste de la facturation",
-                "spécialiste maintenant",
-                "specialiste maintenant",
-            )
-        )
+        has_spec = any(w in low for w in ("billing specialist", "specialist now", "spécialiste de la facturation", "specialiste de la facturation", "spécialiste maintenant", "specialiste maintenant"))
+        has_generic = any(w in low for w in ("representative", "représentant", "representant", "customer service", "service à la clientèle", "service a la clientele"))
+        has_transfer_verb = any(w in low for w in ("transfer", "transfèr", "transfér", "connect"))
+        has_transfer = (has_spec or has_transfer_verb) and not (has_generic and not has_spec)
 
         if not has_explanation and not has_transfer:
             return f"{explanation_sent} {transfer_sent}"
         if not has_explanation and has_transfer:
             return f"{explanation_sent} {clean_text}"
         if has_explanation and not has_transfer:
-            return f"{clean_text.rstrip()} {transfer_sent}"
+            clean_text = re.sub(
+                r"(?:(?:i (?:will|shall|can|must) )?(?:transfer|connect) you to a representative(?: now)?\.?|"
+                r"(?:je vous (?:transf[eé]rerai?|mets en contact avec) un repr[eé]sentant(?: maintenant)?\.?))",
+                "",
+                clean_text,
+                flags=re.IGNORECASE,
+            ).strip()
+            clean_text = f"{clean_text} {transfer_sent}".strip()
+            return clean_text
         return clean_text
 
     handoff_msg = str(session_params.get("handoff_message") or "").strip()

@@ -123,3 +123,39 @@ def test_sanitizes_end_session_reason_in_french(callback) -> None:
     assert fc.args["reason"] == "résolu"
 
 
+def test_enforce_outage_utterance_en_and_fr() -> None:
+    from lib.speech import enforce_outage_utterance
+    from lib.fakes import spoken_line
+
+    txt_en = "I see there's an active outage in your area. We're working on it."
+    out_en = enforce_outage_utterance(txt_en, {"language": "en-US"})
+    assert out_en == spoken_line("outage_active", "en-US")
+
+    txt_fr = "Je constate qu'il y a une panne active dans votre secteur."
+    out_fr = enforce_outage_utterance(txt_fr, {"language": "fr-CA"})
+    assert out_fr == spoken_line("outage_active", "fr-CA")
+
+    comp_en = spoken_line("outage_active", "en-US")
+    assert enforce_outage_utterance(comp_en, {"language": "en-US"}) == comp_en
+
+    comp_fr = spoken_line("outage_active", "fr-CA")
+    assert enforce_outage_utterance(comp_fr, {"language": "fr-CA"}) == comp_fr
+
+    sms_txt = "I've registered text updates for your number ending in 0186."
+    assert enforce_outage_utterance(sms_txt, {"language": "en-US"}) == sms_txt
+
+    non_outage = "Your account balance is $85.50."
+    assert enforce_outage_utterance(non_outage, {"language": "en-US"}) == non_outage
+    assert enforce_outage_utterance("", {}) == ""
+
+
+def test_adv_iter11_4_paraphrased_transfer_replacement() -> None:
+    from lib.speech import enforce_handover_utterance
+    st = {"dispute_limit_exceeded": True, "language": "en-US"}
+    txt = "Disputes exceeding the automated limit require review by our specialized team. I will transfer you to a representative now."
+    res = enforce_handover_utterance(txt, st)
+    assert "billing specialist now" in res
+    assert "representative" not in res
+
+
+

@@ -45,12 +45,57 @@ def clean_speech(text: str) -> str:
     return mask_long_numbers(strip_markdown(text))
 
 
+def enforce_outage_utterance(
+    text: str,
+    session_params: dict[str, Any] | None = None,
+) -> str:
+    """Ensure active outage announcements speak all three sentences verbatim."""
+    clean_text = (text or "").strip()
+    if not clean_text:
+        return text
+
+    low = clean_text.lower()
+    is_en_outage = (
+        "active outage in your area" in low
+        or "there's an active outage" in low
+        or "there is an active outage" in low
+    )
+    is_fr_outage = (
+        "panne active dans votre secteur" in low
+        or ("panne active" in low and "secteur" in low)
+    )
+    if not (is_en_outage or is_fr_outage):
+        return text
+
+    # Do not overwrite a dedicated SMS registration confirmation turn
+    if any(k in low for k in ("i've registered", "j'ai inscrit", "j'ai bien noté", "registered text", "registered your number")):
+        return text
+
+    state_dict = session_params if isinstance(session_params, dict) else {}
+    lang = str(state_dict.get("language") or "")
+    if is_fr_outage or lang.startswith("fr"):
+        full_line = spoken_line("outage_active", "fr-CA")
+        has_s2 = "travaillons" in low
+        has_s3 = "texto lorsque" in low or "sera rétabli" in low or "sera retabli" in low
+        if not has_s2 or not has_s3:
+            return full_line
+    else:
+        full_line = spoken_line("outage_active", "en-US")
+        has_s2 = "working on it" in low
+        has_s3 = "text you when" in low or "when it's restored" in low or "when it is restored" in low
+        if not has_s2 or not has_s3:
+            return full_line
+
+    return text
+
+
 def clean_agent_speech(
     text: str,
     session_params: dict[str, Any] | None = None,
 ) -> str:
     """Clean markdown and long numbers, and prefer caller_provided_phone_last4 when present."""
     cleaned = clean_speech(text)
+    cleaned = enforce_outage_utterance(cleaned, session_params)
     if not isinstance(session_params, dict):
         return cleaned
     caller_last4 = str(session_params.get("caller_provided_phone_last4") or "").strip()
@@ -122,29 +167,27 @@ def enforce_handover_utterance(
             "exceeding the automated limit" in low
             or "dépassant la limite automatisée" in low
             or "depassant la limite automatisee" in low
+            or any(w in low for w in ("exceed", "limit", "dépasse", "depasse", "maximum", "review", "specialized team", "équipe spécialisée", "equipe specialisee"))
         )
-        has_transfer = any(
-            w in low
-            for w in (
-                "transfer",
-                "transfèr",
-                "transfér",
-                "connect",
-                "billing specialist",
-                "specialist now",
-                "spécialiste de la facturation",
-                "specialiste de la facturation",
-                "spécialiste maintenant",
-                "specialiste maintenant",
-            )
-        )
+        has_spec = any(w in low for w in ("billing specialist", "specialist now", "spécialiste de la facturation", "specialiste de la facturation", "spécialiste maintenant", "specialiste maintenant"))
+        has_generic = any(w in low for w in ("representative", "représentant", "representant", "customer service", "service à la clientèle", "service a la clientele"))
+        has_transfer_verb = any(w in low for w in ("transfer", "transfèr", "transfér", "connect"))
+        has_transfer = (has_spec or has_transfer_verb) and not (has_generic and not has_spec)
 
         if not has_explanation and not has_transfer:
             return f"{explanation_sent} {transfer_sent}"
         if not has_explanation and has_transfer:
             return f"{explanation_sent} {clean_text}"
         if has_explanation and not has_transfer:
-            return f"{clean_text.rstrip()} {transfer_sent}"
+            clean_text = re.sub(
+                r"(?:(?:i (?:will|shall|can|must) )?(?:transfer|connect) you to a representative(?: now)?\.?|"
+                r"(?:je vous (?:transf[eé]rerai?|mets en contact avec) un repr[eé]sentant(?: maintenant)?\.?))",
+                "",
+                clean_text,
+                flags=re.IGNORECASE,
+            ).strip()
+            clean_text = f"{clean_text} {transfer_sent}".strip()
+            return clean_text
         return clean_text
 
     handoff_msg = str(session_params.get("handoff_message") or "").strip()

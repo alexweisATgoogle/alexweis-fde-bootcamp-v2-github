@@ -21,6 +21,7 @@ def before_model_callback(
 # uses: from lib.dynamic_prompt import apply_language_prompt_filter
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import copy
 import hashlib
 import re
 

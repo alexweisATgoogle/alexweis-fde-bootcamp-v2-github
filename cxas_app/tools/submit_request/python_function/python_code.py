@@ -66,6 +66,7 @@ def submit_request(
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
+import copy
 import hashlib
 import math
 import re
@@ -844,13 +845,14 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
 def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
+    raw_str = re.sub(r"^(?:mobile|phone|cell|tel|t[eé]l[eé]phone|num[eé]ro|account|compte)\s*[:=-]\s*", "", raw_str, flags=re.IGNORECASE).strip()
     raw = raw_str.upper()
     if not raw:
         return None
     if raw in _SYNTHESIZED_ACCOUNTS:
-        return dict(_SYNTHESIZED_ACCOUNTS[raw])
+        return copy.deepcopy(_SYNTHESIZED_ACCOUNTS[raw])
     if raw_str in _SYNTHESIZED_ACCOUNTS:
-        return dict(_SYNTHESIZED_ACCOUNTS[raw_str])
+        return copy.deepcopy(_SYNTHESIZED_ACCOUNTS[raw_str])
     k_last4 = "phone_" + "last" + "4"
     k_caller = "caller_provided_" + k_last4
     has_alpha = any(c.isalpha() for c in raw_str)
@@ -976,10 +978,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
                 "status": "cleared",
             }
         ]
-        _SYNTHESIZED_ACCOUNTS[ref_id] = base
-        _SYNTHESIZED_ACCOUNTS[raw_str] = base
-        _SYNTHESIZED_ACCOUNTS[raw] = base
-        return base
+        _SYNTHESIZED_ACCOUNTS[ref_id] = copy.deepcopy(base)
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[ref_id]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[ref_id]
+        return copy.deepcopy(base)
     return None
 
 def ok_reply(  # pragma: no cover
@@ -1469,7 +1471,8 @@ def submit_request_impl(  # pragma: no cover
         if not math.isfinite(d_amt):
             d_amt = 0.0
         if d_amt <= 0.0:
-            clean_summary_norm = clean_summary.replace(",", ".")
+            clean_summary_norm = re.sub(r",(\d{3})(?!\d)", r"\1", clean_summary)
+            clean_summary_norm = re.sub(r",(\d{1,2})(?!\d)", r".\1", clean_summary_norm)
             m_amt = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary_norm)
             if m_amt:
                 try:
@@ -1693,7 +1696,7 @@ def submit_request_impl(  # pragma: no cover
         "verify recent", "vérifier", "verifier", "check payment", "posted", "cleared",
         "paid my bill", "payé ma facture", "payé mon compte", "paid earlier",
     )) or bool(re.search(r"\b(?:already\s+paid|paid\s+(?:my\s+)?(?:bill|account|online)|d[eé]j[aà]\s+pay[eé])\b", low))
-    if (clean_action == "verify_prior_payment" and has_prior_kw) or (not clean_action and has_prior_kw):
+    if clean_action == "verify_prior_payment" or (not clean_action and has_prior_kw):
         acc_id = str(state.get("account_id") or "")
         account = find_account(acc_id) if acc_id else None
         ledger = account.get("payment_ledger", []) if account else []
@@ -1988,7 +1991,7 @@ def submit_request_impl(  # pragma: no cover
                 "amount_display": display_amount(pmt_amount),
                 "card_last4": c_digits[-4:],
                 "service_restored": (new_bal == 0.0),
-                "service_status": "active" if new_bal == 0.0 else "suspended",
+                "service_status": ("actif" if new_bal == 0.0 else "suspendu") if lang.startswith("fr") else ("active" if new_bal == 0.0 else "suspended"),
                 "new_past_due_balance": new_bal,
             },
             reference,
@@ -2151,7 +2154,8 @@ def submit_request_impl(  # pragma: no cover
         )
 
         if dispute_amt <= 0.0:
-            clean_for_amt_norm = clean_for_amt.replace(",", ".")
+            clean_for_amt_norm = re.sub(r",(\d{3})(?!\d)", r"\1", clean_for_amt)
+            clean_for_amt_norm = re.sub(r",(\d{1,2})(?!\d)", r".\1", clean_for_amt_norm)
             amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_for_amt_norm)
             if amt_match:
                 try:
@@ -2218,7 +2222,6 @@ def submit_request_impl(  # pragma: no cover
                 "days": refund_days,
                 "days_display": str(refund_days),
                 "adjustment_type": "credit_de_courtoisie" if lang.startswith("fr") else "courtesy_credit",
-                "refund_destination": "crédit sur le prochain relevé" if lang.startswith("fr") else "statement_credit",
                 "status_code": "approuve" if lang.startswith("fr") else "approved",
             },
             reference,
@@ -2489,6 +2492,7 @@ def submit_request_impl(  # pragma: no cover
                         "activation_fee_display": "0.00",
                         "upgrade_confirmed": True,
                         "status": "actif" if lang.startswith("fr") else "active",
+                        "gateway_compatibility": "compatible_borne_actuelle" if lang.startswith("fr") else "compatible",
                     },
                     reference,
                     language=lang,
@@ -2497,22 +2501,25 @@ def submit_request_impl(  # pragma: no cover
 
             curated_net = []
             for p in matched_net:
-                curated_net.append(
-                    {
-                        "plan_id": p["plan_id"],
-                        "name": p["name"],
-                        "plan_name": p["name"],
-                        "monthly_rate": p["monthly_rate"],
-                        "rate_display": p["rate_display"],
-                        "speed_mbps": p["speed_mbps"],
-                        "download_mbps": p.get("download_mbps", p["speed_mbps"]),
-                        "upload_mbps": p.get("upload_mbps", p["speed_mbps"]),
-                        "unlimited_data": True,
-                        "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
-                        "activation_fee": 0.0,
-                        "activation_fee_display": "0.00",
-                    }
-                )
+                p_net = {
+                    "plan_id": p["plan_id"],
+                    "name": p["name"],
+                    "plan_name": p["name"],
+                    "monthly_rate": p["monthly_rate"],
+                    "rate_display": p["rate_display"],
+                    "speed_mbps": p["speed_mbps"],
+                    "download_mbps": p.get("download_mbps", p["speed_mbps"]),
+                    "upload_mbps": p.get("upload_mbps", p["speed_mbps"]),
+                    "unlimited_data": True,
+                    "data_cap": "Illimité" if lang.startswith("fr") else "Unlimited",
+                    "activation_fee": 0.0,
+                    "activation_fee_display": "0.00",
+                    "gateway_compatibility": "compatible_borne_actuelle" if lang.startswith("fr") else "compatible",
+                }
+                if lang.startswith("fr"):
+                    p_net["contract_term"] = "mensuel"
+                    p_net["taxes_note"] = "taxes applicables en sus"
+                curated_net.append(p_net)
             top = curated_net[-1]
             return ok_reply(
                 {
@@ -2530,6 +2537,7 @@ def submit_request_impl(  # pragma: no cover
                     "activation_fee_display": "0.00",
                     "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
                     "current_plan_speed": "100 Mbit/s" if lang.startswith("fr") else "100 Mbps",
+                    "gateway_compatibility": "compatible_borne_actuelle" if lang.startswith("fr") else "compatible",
                 },
                 reference,
                 language=lang,
@@ -2615,13 +2623,21 @@ def submit_request_impl(  # pragma: no cover
             curated = all_mobility[-3:]
 
         roaming_addons = [
-            {"name": "Roam Better - US", "daily_rate": 12.0, "rate_display": "12.00"},
-            {"name": "Roam Better - International", "daily_rate": 15.0, "rate_display": "15.00"},
+            {"name": "Voyagez mieux - États-Unis" if lang.startswith("fr") else "Roam Better - US", "daily_rate": 12.0, "rate_display": "12.00"},
+            {"name": "Voyagez mieux - International" if lang.startswith("fr") else "Roam Better - International", "daily_rate": 15.0, "rate_display": "15.00"},
         ]
+        curated_localized = []
+        for p in curated:
+            p_dict = dict(p)
+            if lang.startswith("fr"):
+                p_dict["overage_policy"] = "aucun frais de dépassement de données; vitesse réduite à 512 kbps"
+                p_dict["contract_term"] = "mensuel"
+                p_dict["taxes_note"] = "taxes applicables en sus"
+            curated_localized.append(p_dict)
         return ok_reply(
             {
-                "plans": curated,
-                "count": len(curated),
+                "plans": curated_localized,
+                "count": len(curated_localized),
                 "activation_fee": 0.0,
                 "activation_fee_display": "0.00",
                 "overage_policy": "aucun frais de dépassement de données; vitesse réduite à 512 kbps" if lang.startswith("fr") else "no data overage fees; speeds throttled to 512 kbps",

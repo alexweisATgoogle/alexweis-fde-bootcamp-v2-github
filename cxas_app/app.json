@@ -430,6 +430,15 @@
         "default": "",
         "required": []
       }
+    },
+    {
+      "name": "step_up_active",
+      "description": "Whether step-up MFA PIN verification is currently active across strikes.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
     }
   ],
   "guardrails": [

@@ -1215,8 +1215,8 @@ def test_ve_28_password_reset_alias() -> None:
 
 
 def test_ve_57_delinquent_card_decline_and_retry() -> None:
-    # Delinquent account A550199 has card_on_file_status="declined_expired"
-    st = {"account_id": "A550199", "past_due_balance": 85.50, "card_last4": "7742", "logged_in": True}
+    # Delinquent account A550133 has card_on_file_status="declined_expired"
+    st = {"account_id": "A550133", "past_due_balance": 85.50, "card_last4": "7742", "logged_in": True}
     # Attempt 1: tries saved card on file
     r1 = submit_request_impl("Pay past due balance with card on file", action="pay_bill", state=st)
     assert r1["status"] == "error"
@@ -1259,6 +1259,52 @@ def test_outage_check_no_pc_defaults_to_region_b() -> None:
     assert r["data"]["region"] == "Region-B"
     assert r["data"]["outage_active"] is False
     assert r["data"]["sms_guide_available"] is True
+
+
+def test_adv_iter11_2_step_up_pin_persistence() -> None:
+    st = {"logged_in": True, "step_up_active": True, "pin_attempts": 0}
+    r1 = check_secret_pin_impl("7422", state=st)
+    assert r1["status"] == "error"
+    assert r1["error"] == "WRONG_CODE"
+    assert st["logged_in"] is True
+    assert st["step_up_active"] is True
+    r2 = check_secret_pin_impl("5082", state=st)
+    assert r2["status"] == "error"
+    assert r2["error"] == "WRONG_CODE"
+    assert st["logged_in"] is True
+    r3 = check_secret_pin_impl("9982", state=st)
+    assert r3["status"] == "error"
+    assert r3["error"] in ("TOO_MANY_ATTEMPTS", "ACCOUNT_LOCKED")
+    assert st["logged_in"] is False
+
+
+def test_adv_iter11_5_thousand_separator_comma_dispute() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    r = submit_request_impl("Dispute $1,200.00 equipment charge", action="dispute", state=st)
+    assert r["status"] == "error"
+    assert r["error"] == "LIMIT_EXCEEDED"
+    assert r["data"]["amount"] == 1200.0
+
+
+def test_adv_iter11_6_french_pay_bill_and_plans_localization() -> None:
+    st_pmt = {"account_id": "A1001", "past_due_balance": 85.50, "logged_in": True}
+    r_pmt = submit_request_impl("payer facture", action="pay_bill", card_last4="3782", language="fr-CA", state=st_pmt)
+    assert r_pmt["status"] == "ok"
+    assert r_pmt["data"]["service_status"] == "actif"
+
+    r_plans = submit_request_impl("forfaits mobile", action="search_plans", service_type="mobility", language="fr-CA", state={})
+    assert r_plans["status"] == "ok"
+    p0 = r_plans["data"]["plans"][0]
+    assert p0["contract_term"] == "mensuel"
+    assert p0["taxes_note"] == "taxes applicables en sus"
+    assert "aucun frais" in p0["overage_policy"]
+    assert "Voyagez mieux" in r_plans["data"]["add_ons"][0]["name"]
+
+    st_prior = {"account_id": "A1001", "logged_in": True}
+    r_prior = submit_request_impl("statut", action="verify_prior_payment", language="fr-CA", state=st_prior)
+    assert r_prior["status"] == "ok"
+    assert r_prior["data"]["payment_verified"] is True
+
 
 
 
