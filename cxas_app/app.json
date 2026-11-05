@@ -448,6 +448,15 @@
         "default": false,
         "required": []
       }
+    },
+    {
+      "name": "outage_active",
+      "description": "True when an active outage was found in the area, false if normal or clear.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
     }
   ],
   "guardrails": [

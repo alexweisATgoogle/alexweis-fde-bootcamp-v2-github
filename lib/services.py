@@ -913,6 +913,9 @@ def submit_request_impl(
     low = clean_summary.lower()
     reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
 
+    if clean_action != "outage_check":
+        state["outage_announce_pending"] = False
+
     if not clean_summary and not clean_action:
         if lang.startswith("fr"):
             return error_reply(
@@ -951,6 +954,8 @@ def submit_request_impl(
         or (len(clean_pc) >= 3 and clean_action not in ("dispute", "sla_credit", "outage_credit", "refund", "outage_notification"))
     ) and not any(k in low for k in ("credit", "crédit", "dispute", "contestation", "remboursement", "refund")):
         if clean_service in ("mobile", "wireless", "cellulaire") or any(k in low for k in ("mobile", "cellulaire", "cellular", "cell phone", "données mobiles")):
+            state["outage_announce_pending"] = False
+            state["outage_active"] = False
             return ok_reply(
                 {
                     "outage_active": False,
@@ -985,6 +990,7 @@ def submit_request_impl(
             "cause": "Entretien de la ligne de distribution par fibre optique" if lang.startswith("fr") else outage["cause"],
         }
         state["outage_announce_pending"] = bool(outage_is_active)
+        state["outage_active"] = bool(outage_is_active)
         if not outage_is_active:
             res_data["sms_guide_available"] = True
             res_data["steps"] = [

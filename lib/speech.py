@@ -101,15 +101,17 @@ def enforce_outage_utterance(
     lang = str(state_dict.get("language") or "")
     if is_fr_outage or lang.startswith("fr"):
         full_line = spoken_line("outage_active", "fr-CA")
+        has_s1 = "panne active" in low or "panne" in low
         has_s2 = "travaillons" in low
         has_s3 = "texto lorsque" in low or "sera rétabli" in low or "sera retabli" in low
-        if pending_announce or not has_s2 or not has_s3:
+        if not (has_s1 and has_s2 and has_s3):
             return full_line
     else:
         full_line = spoken_line("outage_active", "en-US")
+        has_s1 = "active outage" in low or "outage in your area" in low
         has_s2 = "working on it" in low
         has_s3 = "text you when" in low or "when it's restored" in low or "when it is restored" in low
-        if pending_announce or not has_s2 or not has_s3:
+        if not (has_s1 and has_s2 and has_s3):
             return full_line
 
     return text
