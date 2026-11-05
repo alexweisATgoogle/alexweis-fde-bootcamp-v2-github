@@ -606,7 +606,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
-            "card_on_file_status": "declined_expired",
+            "card_on_file_status": "active",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-B",

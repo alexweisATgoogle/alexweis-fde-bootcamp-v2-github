@@ -901,7 +901,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
-            "card_on_file_status": "declined_expired",
+            "card_on_file_status": "active",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-B",
@@ -1976,7 +1976,7 @@ def submit_request_impl(  # pragma: no cover
         acc_id = str(state.get("account_id") or "")
         account_obj = find_account(acc_id) if acc_id else None
         card_on_file_status = str(account_obj.get("card_on_file_status", "active") if account_obj else "active")
-        if is_saved_card and not state.get("payment_declined_once") and card_on_file_status == "declined_expired":
+        if not state.get("payment_declined_once") and card_on_file_status == "declined_expired":
             state["payment_declined_once"] = True
             dec_last4 = c_digits[-4:] if len(c_digits) >= 4 else "7742"
             state["declined_card_last4"] = dec_last4
