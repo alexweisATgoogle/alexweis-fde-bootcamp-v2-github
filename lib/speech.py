@@ -62,10 +62,6 @@ def enforce_outage_utterance(
             return spoken_line("outage_active", "fr-CA" if lang.startswith("fr") else "en-US")
         return text
 
-    # If outage is known to be inactive / clear in session state, NEVER overwrite with active outage text
-    if state_dict.get("outage_active") is False or str(state_dict.get("outage_status", "")).lower() in ("clear", "normal"):
-        return text
-
     low = clean_text.lower()
     # If the text explicitly says there is no outage, NEVER overwrite
     if any(neg in low for neg in (
