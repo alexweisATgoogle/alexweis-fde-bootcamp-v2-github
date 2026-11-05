@@ -287,7 +287,7 @@ def test_telco_domain_actions_and_edge_cases() -> None:
     assert pw["status"] == "ok" and pw["data"]["sms_sent"] is True
 
     # 3. Tickets
-    tkt = submit_request_impl("Check ticket T88219", action="check_ticket", state={})
+    tkt = submit_request_impl("Check ticket T88219", action="check_ticket", state=st)
     assert tkt["status"] == "ok" and tkt["data"]["ticket_id"] == "T88219"
 
     # 4. Appointment arrival & reschedule
@@ -1009,6 +1009,105 @@ def test_search_plans_tv_package_tax_fields() -> None:
     assert data["estimated_tax"] == 3.00
     assert data["estimated_monthly_with_tax"] == 23.00
     assert "current_plan" in data
+
+
+def test_adv_iter8_1_check_ticket_and_appointment_require_auth() -> None:
+    # Verify unauthenticated ticket check rejects with NOT_LOGGED_IN and populates account_id
+    st_unauth: dict[str, Any] = {"logged_in": False, "auth_status": "none"}
+    tkt_err = submit_request_impl("Check ticket T88219", action="check_ticket", state=st_unauth)
+    assert tkt_err["status"] == "error"
+    assert tkt_err["error"] == "NOT_LOGGED_IN"
+    assert st_unauth.get("account_id") == "A1001"
+
+    # Verify unauthenticated appointment check rejects with NOT_LOGGED_IN
+    st_unauth_appt: dict[str, Any] = {"logged_in": False, "auth_status": "none"}
+    appt_err = submit_request_impl("Check appointment window", action="check_appointment", state=st_unauth_appt)
+    assert appt_err["status"] == "error"
+    assert appt_err["error"] == "NOT_LOGGED_IN"
+    assert st_unauth_appt.get("account_id") == "A1001"
+
+
+def test_adv_iter8_2_french_elided_warranty_negation() -> None:
+    st: dict[str, Any] = {"account_id": "A1001", "logged_in": True}
+    # "pas d'eau" should not trigger physical damage exclusion
+    res1 = submit_request_impl("Mon écran tactile ne répond plus, pas d'eau ni chute", action="warranty", state=st, language="fr-CA")
+    assert res1["status"] == "ok"
+    assert res1["data"]["claim_status"] in ("approved_standard", "approved", "approuvé")
+
+    # "pas d’eau" with curly apostrophe
+    res2 = submit_request_impl("Mon appareil ne s'allume plus, pas d’eau", action="warranty", state=st, language="fr-CA")
+    assert res2["status"] == "ok"
+    assert res2["data"]["claim_status"] in ("approved_standard", "approved", "approuvé")
+
+    # Actual physical damage should still be excluded
+    res3 = submit_request_impl("Mon téléphone a pris l'eau", action="warranty", state=st, language="fr-CA")
+    assert res3["status"] == "error"
+    assert res3["error"] == "PHYSICAL_DAMAGE_EXCLUDED"
+
+
+def test_adv_iter8_3_spoken_card_keypad_bypass() -> None:
+    st: dict[str, Any] = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50}
+    # Caller refused keypad and spoke card aloud - must be rejected despite word "keypad"
+    res = submit_request_impl(
+        "Caller refused keypad entry and spoke card 4532111122223333 aloud",
+        action="pay_bill",
+        state=st,
+        language="en-US",
+    )
+    assert res["status"] == "error"
+    assert res["error"] == "INVALID_INPUT"
+
+
+def test_adv_iter8_4_identifier_label_prefix_stripping() -> None:
+    st: dict[str, Any] = {}
+    r1 = lookup_account_impl("account 202-555-0186", state=st)
+    assert r1["status"] == "ok"
+    assert r1["data"]["phone_last4"] == "0186"
+
+    r2 = lookup_account_impl("mobile: 202-555-0186", state=st)
+    assert r2["status"] == "ok"
+    assert r2["data"]["phone_last4"] == "0186"
+
+
+def test_adv_iter8_bug1_dispute_amount_float_overflow() -> None:
+    st: dict[str, Any] = {"account_id": "A1001", "logged_in": True}
+    huge_amount = "9" * 400
+    res = submit_request_impl(f"Dispute {huge_amount} dollar overcharge", action="dispute", state=st)
+    assert res["status"] == "error"
+    assert res["error"] == "LIMIT_EXCEEDED"
+
+
+def test_ve_24_two_sentence_handoff_message() -> None:
+    st: dict[str, Any] = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("Dispute 50 dollar charge", action="dispute", amount=50.0, state=st, language="en-US")
+    assert res["status"] == "error"
+    assert res["error"] == "LIMIT_EXCEEDED"
+    assert "Disputes exceeding the automated limit require review by a specialist." in st["handoff_message"]
+    assert "I'll connect you to a billing specialist now" in st["handoff_message"]
+
+    h = handover_to_person_impl(target_queue="billing_specialist", reason="refund_threshold_exceeded", state=st, language="en-US")
+    assert h["status"] == "ok"
+    assert "Disputes exceeding the automated limit require review by a specialist." in h["data"]["spoken_message"]
+    assert "I'll connect you to a billing specialist now" in h["data"]["spoken_message"]
+
+
+def test_ve_29_verify_prior_payment_keywords() -> None:
+    st: dict[str, Any] = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50}
+    # "recent payment" should match and verify payment
+    res1 = submit_request_impl("I made a recent payment", action="verify_prior_payment", state=st)
+    assert res1["status"] == "ok"
+    assert res1["data"]["payment_verified"] is True
+    assert st["past_due_balance"] == 0.0
+
+    # Bare restore inquiry without prior payment keywords should not trigger verify_prior_payment
+    st2: dict[str, Any] = {"account_id": "A1001", "logged_in": True, "past_due_balance": 85.50}
+    res2 = submit_request_impl("Please restore my service", state=st2)
+    # This requires card details (pay_bill) rather than hijacking verify_prior_payment
+    assert res2["status"] == "error"
+    assert res2["error"] == "INVALID_INPUT"
+    assert "No payment card" in res2["error_message"]
+    assert "payment_verified" not in res2.get("data", {})
+
 
 
 

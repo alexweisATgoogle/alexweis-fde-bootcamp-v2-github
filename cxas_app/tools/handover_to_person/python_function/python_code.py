@@ -456,13 +456,17 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     default_acct = ACCOUNTS[0] if ACCOUNTS else {}
     if not state.get("account_id"):
         state["account_id"] = default_acct.get("account_id", "")
+        # If account_id was unpopulated, state["past_due_balance"] holds only the app.json default 0.0
+        if not state.get("payment_verified") and not state.get("service_restored"):
+            state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     if not state.get("phone_last4"):
         state["phone_last4"] = default_acct.get("phone", "")[-4:]
     state.setdefault("auth_status", "none")
     state.setdefault("auth_failure_count", 0)
     state.setdefault("pin_failure_count", 0)
     state.setdefault("payment_failure_count", 0)
-    state.setdefault("past_due_balance", float(default_acct.get("past_due_balance", 85.50)))
+    if "past_due_balance" not in state or (float(state.get("past_due_balance") or 0.0) == 0.0 and not state.get("payment_verified") and not state.get("service_restored")):
+        state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
 
 MAX_LOGIN_ATTEMPTS = 3  # pragma: no cover
@@ -759,7 +763,12 @@ def handover_to_person_impl(  # pragma: no cover
             if resolved_lang.startswith("fr")
             else "Disputes exceeding the automated limit require review by a specialist. "
         )
-        message = (threshold_prefix + base_msg) if clean_reason == "refund_threshold_exceeded" or state.get("dispute_limit_exceeded") else base_msg
+        message = (
+            (threshold_prefix + base_msg)
+            if clean_reason == "refund_threshold_exceeded"
+            or state.get("dispute_limit_exceeded")
+            else base_msg
+        )
     elif clean_reason in ("auth_failure_handoff", "auth_failure") or tq == "tier2_auth":
         message = spoken_line("auth_failure_handoff", resolved_lang)
     elif tq == "french_technical_support" or clean_reason == "secondary_language_live_agent":

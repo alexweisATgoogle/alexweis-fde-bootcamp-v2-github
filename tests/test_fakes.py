@@ -175,7 +175,6 @@ def test_acc_identifier_normalization_and_synthesis() -> None:
     assert acc1 is not None
     assert acc1["account_id"] == "ACC-10200"
     assert acc1["status"] == "active"
-    assert "current_plan" in acc1
     assert len(acc1["payment_ledger"]) >= 1
 
     res2 = normalize_identifier("ACC-30400")

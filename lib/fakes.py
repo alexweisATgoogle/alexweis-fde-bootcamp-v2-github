@@ -572,9 +572,9 @@ def normalize_identifier(raw: object) -> dict[str, str]:
     s = str(raw or "").strip()
     if not s:
         return {"kind": "unknown", "value": ""}
-    # adv_iter7_1: strip label prefixes before alphanumeric reference matching
+    # adv_iter8_4: strip label prefixes before alphanumeric reference matching
     s = re.sub(
-        r"^(?:phone|tel|telephone|numéro|numero|téléphone)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*[:#=]\s*",
+        r"^(?:phone|tel|telephone|numéro|numero|téléphone|mobile|cell(?:ulaire)?)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*(?:[:#=]|\s+)\s*",
         "",
         s,
         flags=re.IGNORECASE,
@@ -737,10 +737,6 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        base["current_plan"] = "Fiber 100"
-        base["current_plan_speed"] = "100 Mbps"
-        base["current_internet_plan"] = "Fiber 100"
-        base["current_internet_speed"] = "100 Mbps"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",

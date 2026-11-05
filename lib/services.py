@@ -81,13 +81,17 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:
     default_acct = ACCOUNTS[0] if ACCOUNTS else {}
     if not state.get("account_id"):
         state["account_id"] = default_acct.get("account_id", "")
+        # If account_id was unpopulated, state["past_due_balance"] holds only the app.json default 0.0
+        if not state.get("payment_verified") and not state.get("service_restored"):
+            state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     if not state.get("phone_last4"):
         state["phone_last4"] = default_acct.get("phone", "")[-4:]
     state.setdefault("auth_status", "none")
     state.setdefault("auth_failure_count", 0)
     state.setdefault("pin_failure_count", 0)
     state.setdefault("payment_failure_count", 0)
-    state.setdefault("past_due_balance", float(default_acct.get("past_due_balance", 85.50)))
+    if "past_due_balance" not in state or (float(state.get("past_due_balance") or 0.0) == 0.0 and not state.get("payment_verified") and not state.get("service_restored")):
+        state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
 
 
@@ -399,10 +403,6 @@ def lookup_account_impl(
             spoken_summary="Compte d'affaires identifié." if lang.startswith("fr") else "Business account identified.",
         )
 
-    acc_services = list(account.get("active_services", ["mobile", "internet"]))
-    is_net = "internet" in acc_services
-    plan_lbl = ("Fibre 100" if lang.startswith("fr") else "Fiber 100") if is_net else ("Forfait mobilité" if lang.startswith("fr") else "Mobility Plan")
-    plan_spd = ("100 Mbit/s" if lang.startswith("fr") else "100 Mbps") if is_net else ""
     return ok_reply(
         {
             "account_id": account["account_id"],
@@ -410,9 +410,6 @@ def lookup_account_impl(
             "phone_last4": account["phone"][-4:],
             "caller_provided_phone_last4": state["caller_provided_phone_last4"],
             "account_status": account.get("status", "active"),
-            "current_plan": plan_lbl,
-            "current_plan_speed": plan_spd,
-            "active_services": acc_services,
         },
         reference,
         language=lang,
@@ -1018,7 +1015,56 @@ def submit_request_impl(
             spoken_summary="SMS de réinitialisation envoyé." if lang.startswith("fr") else "Password reset SMS dispatched.",
         )
 
-    # 3. Open Support Ticket Status (M6) — Information inquiry, does not require login
+    # Synchronize logged_in state with auth_status
+    if state.get("logged_in") is True and state.get("auth_status") != "locked":
+        state["auth_status"] = "pass"
+    elif state.get("logged_in") is False and state.get("auth_status") != "locked":
+        state["auth_status"] = "none"
+
+    is_large_dispute = False
+    if clean_action == "dispute" or any(k in low for k in ("dispute", "conteste", "refund", "remboursement")):
+        try:
+            d_amt = float(amount) if amount else 0.0
+        except (ValueError, TypeError):
+            d_amt = 0.0
+        if not math.isfinite(d_amt):
+            d_amt = 0.0
+        if d_amt <= 0.0:
+            m_amt = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
+            if m_amt:
+                try:
+                    f_amt = float(m_amt.group(1))
+                    d_amt = f_amt if math.isfinite(f_amt) else 999999.0
+                except (ValueError, TypeError, OverflowError):
+                    d_amt = 999999.0
+        if d_amt > 25.0:
+            is_large_dispute = True
+
+    is_unauthenticated_allowed = (
+        clean_action in ("search_plans", "troubleshoot", "troubleshoot_tv")
+        or is_large_dispute
+        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "streaming", "tv app", "satellite", "dépannage", "depannage", "troubleshoot", "aucun service", "no service", "réseau", "panne")))
+    )
+
+    if state.get("auth_status") != "pass" and not is_unauthenticated_allowed:
+        if not state.get("account_id"):
+            _ensure_default_profile(state)
+        return error_reply(
+            "NOT_LOGGED_IN",
+            "L'appelant n'a pas complété l'authentification." if lang.startswith("fr") else "The caller has not passed login.",
+            "Authentifier l'appelant avec send_login_code puis check_login_code avant de continuer." if lang.startswith("fr") else "Log the caller in with send_login_code and check_login_code, then call submit_request again.",
+            reference,
+            language=lang,
+        )
+    if not account_id:
+        _ensure_default_profile(state)
+        account_id = str(state.get("account_id") or "")
+        reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
+
+    state["request_summary"] = clean_summary
+    state["last_tracking_id"] = reference
+
+    # 3. Open Support Ticket Status (M6) — Now authenticated
     if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
         tid_match = re.search(r"\b((?:INC|TKT|SR|CASE|TT)-?\d{4,8}|T\d{4,8})\b", clean_summary, re.IGNORECASE)
         tid = tid_match.group(1).upper() if tid_match else "T88219"
@@ -1052,7 +1098,7 @@ def submit_request_impl(
             spoken_summary="Statut du billet récupéré." if lang.startswith("fr") else "Ticket status retrieved.",
         )
 
-    # 4. Technician Appointment Arrival Status (M6) — Information inquiry without reschedule/cancel
+    # 4. Technician Appointment Arrival Status (M6) — Now authenticated
     if (clean_action in ("check_appointment", "appointment_status") or any(k in low for k in ("technician", "technicien", "appointment", "rendez-vous"))) and not any(k in low for k in ("reschedule", "reporter", "changer", "cancel", "annuler", "résilier", "resilier", "demain", "tomorrow")):
         acc_id = str(state.get("account_id") or "A1001")
         appt = APPOINTMENTS.get(acc_id, APPOINTMENTS["A1001"])
@@ -1074,49 +1120,6 @@ def submit_request_impl(
             language=lang,
             spoken_summary="Statut du rendez-vous récupéré." if lang.startswith("fr") else "Appointment status retrieved.",
         )
-
-    # Synchronize logged_in state with auth_status
-    if state.get("logged_in") is True and state.get("auth_status") != "locked":
-        state["auth_status"] = "pass"
-    elif state.get("logged_in") is False and state.get("auth_status") != "locked":
-        state["auth_status"] = "none"
-
-    is_large_dispute = False
-    if clean_action == "dispute" or any(k in low for k in ("dispute", "conteste", "refund", "remboursement")):
-        try:
-            d_amt = float(amount) if amount else 0.0
-        except (ValueError, TypeError):
-            d_amt = 0.0
-        if not math.isfinite(d_amt):
-            d_amt = 0.0
-        if d_amt <= 0.0:
-            m_amt = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_summary)
-            if m_amt:
-                d_amt = float(m_amt.group(1))
-        if d_amt > 25.0:
-            is_large_dispute = True
-
-    is_unauthenticated_allowed = (
-        clean_action in ("search_plans", "troubleshoot", "troubleshoot_tv")
-        or is_large_dispute
-        or (not clean_action and any(k in low for k in ("plan", "forfait", "receiver", "récepteur", "streaming", "tv app", "satellite", "dépannage", "depannage", "troubleshoot", "aucun service", "no service", "réseau", "panne")))
-    )
-
-    if state.get("auth_status") != "pass" and not is_unauthenticated_allowed:
-        return error_reply(
-            "NOT_LOGGED_IN",
-            "L'appelant n'a pas complété l'authentification." if lang.startswith("fr") else "The caller has not passed login.",
-            "Authentifier l'appelant avec send_login_code puis check_login_code avant de continuer." if lang.startswith("fr") else "Log the caller in with send_login_code and check_login_code, then call submit_request again.",
-            reference,
-            language=lang,
-        )
-    if not account_id:
-        _ensure_default_profile(state)
-        account_id = str(state.get("account_id") or "")
-        reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
-
-    state["request_summary"] = clean_summary
-    state["last_tracking_id"] = reference
 
     # 4b. Bill Inquiry / Balance Check
     if clean_action in ("bill_inquiry", "recent_bills", "billing_breakdown") or (
@@ -1227,7 +1230,15 @@ def submit_request_impl(
         )
 
     # 6. Prior Payment Verification (Ledger-backed)
-    if clean_action == "verify_prior_payment" or any(k in low for k in ("already paid", "déjà payé", "deja paye", "verify payment", "paid online", "paid recently")):
+    has_prior_kw = any(k in low for k in (
+        "already paid", "déjà payé", "deja paye", "paid online", "paid recently",
+        "payment receipt", "reçu de paiement", "recu de paiement", "prior payment",
+        "paiement antérieur", "paiement anterieur", "double paiement", "paid twice",
+        "recent payment", "paiement récent", "paiement recent", "verify payment",
+        "verify recent", "vérifier", "verifier", "check payment", "posted", "cleared",
+        "paid my bill", "payé ma facture", "payé mon compte", "paid earlier",
+    )) or bool(re.search(r"\b(?:already\s+paid|paid\s+(?:my\s+)?(?:bill|account|online)|d[eé]j[aà]\s+pay[eé])\b", low))
+    if (clean_action == "verify_prior_payment" and has_prior_kw) or (not clean_action and has_prior_kw):
         acc_id = str(state.get("account_id") or "")
         account = find_account(acc_id) if acc_id else None
         ledger = account.get("payment_ledger", []) if account else []
@@ -1355,7 +1366,6 @@ def submit_request_impl(
                 "taxes_and_fees_display": display_amount(taxes_and_fees),
                 "late_fee": late_fee,
                 "late_fee_display": display_amount(late_fee),
-                "current_plan": "Fibre 100" if lang.startswith("fr") else "Fiber 100",
             },
             reference,
             language=lang,
@@ -1408,7 +1418,7 @@ def submit_request_impl(
                 low,
             )
         )
-        if has_spoken_card and not is_negated_spoken_card and not any(k in low for k in ("keypad", "clavier", "taper", "enter", "entré", "entre")):
+        if has_spoken_card and not is_negated_spoken_card:
             if lang.startswith("fr"):
                 return error_reply(
                     "INVALID_INPUT",
@@ -1514,7 +1524,7 @@ def submit_request_impl(
         _neg_leader = r"(?:no|not|without|zero|neither|nor|never|free\s+of|aucun\w*|aucune|pas\s+(?:de|d['’])|sans|jamais|aucun\s+dommage|aucun\s+dégât\w*|n['’\s](?:est|y\s+a|a)\s+pas(?:\s+pris)?)"
         _dmg_item = rf"(?:[a-zA-Z'’\s]{{0,15}}\b{_dmg_term}\b[a-zA-Z'’\s]{{0,15}})"
         low_clean_damage = re.sub(
-            rf"\b{_neg_leader}\b\s+{_dmg_item}(?:\s*(?:,(?!\s*(?:but|mais|however))\s*|\s+(?:ou|or|and|et|ni|nor)\s*)(?:pas\s+de\s+)?{_dmg_item})*",
+            rf"\b{_neg_leader}(?:\s+|(?<=['’])\s*){_dmg_item}(?:\s*(?:,(?!\s*(?:but|mais|however))\s*|\s+(?:ou|or|and|et|ni|nor)\s*)(?:pas\s+de\s+)?{_dmg_item})*",
             "",
             low,
             flags=re.IGNORECASE,
@@ -1651,7 +1661,11 @@ def submit_request_impl(
         if dispute_amt <= 0.0:
             amt_match = re.search(r"\$?(\d+(?:\.\d{1,2})?)", clean_for_amt)
             if amt_match:
-                dispute_amt = float(amt_match.group(1))
+                try:
+                    f_amt = float(amt_match.group(1))
+                    dispute_amt = f_amt if math.isfinite(f_amt) else 999999.0
+                except (ValueError, TypeError, OverflowError):
+                    dispute_amt = 999999.0
             elif is_overpayment:
                 acc_id = str(state.get("account_id") or "")
                 account = find_account(acc_id) if acc_id else None
@@ -1679,13 +1693,19 @@ def submit_request_impl(
 
         if dispute_amt > 25.0:
             transfer_msg = spoken_line("transfer_to_specialist", lang)
-            state["handoff_message"] = transfer_msg
+            threshold_prefix = (
+                "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. "
+                if lang.startswith("fr")
+                else "Disputes exceeding the automated limit require review by a specialist. "
+            )
+            full_msg = threshold_prefix + transfer_msg
+            state["handoff_message"] = full_msg
             state["handoff_reason"] = "refund_threshold_exceeded"
             state["dispute_limit_exceeded"] = True
             return error_reply(
                 "LIMIT_EXCEEDED",
                 message="Dispute exceeds the $25.00 limit for automated adjustment." if not lang.startswith("fr") else "La contestation dépasse la limite de 25,00 $.",
-                agent_action="Explain requests over $25 require specialist and transfer." if not lang.startswith("fr") else "Expliquer que les demandes de plus de 25 $ requièrent un spécialiste.",
+                agent_action="Speak refund_threshold_exceeded_explanation and transfer_to_specialist verbatim, then call handover_to_person" if not lang.startswith("fr") else "Prononcer l'explication de limite dépassée et transférer à un spécialiste via handover_to_person",
                 reference=reference,
                 language=lang,
                 data={
@@ -2167,7 +2187,12 @@ def handover_to_person_impl(
             if resolved_lang.startswith("fr")
             else "Disputes exceeding the automated limit require review by a specialist. "
         )
-        message = (threshold_prefix + base_msg) if clean_reason == "refund_threshold_exceeded" or state.get("dispute_limit_exceeded") else base_msg
+        message = (
+            (threshold_prefix + base_msg)
+            if clean_reason == "refund_threshold_exceeded"
+            or state.get("dispute_limit_exceeded")
+            else base_msg
+        )
     elif clean_reason in ("auth_failure_handoff", "auth_failure") or tq == "tier2_auth":
         message = spoken_line("auth_failure_handoff", resolved_lang)
     elif tq == "french_technical_support" or clean_reason == "secondary_language_live_agent":

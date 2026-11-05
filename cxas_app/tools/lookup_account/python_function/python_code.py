@@ -492,9 +492,9 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
     s = str(raw or "").strip()
     if not s:
         return {"kind": "unknown", "value": ""}
-    # adv_iter7_1: strip label prefixes before alphanumeric reference matching
+    # adv_iter8_4: strip label prefixes before alphanumeric reference matching
     s = re.sub(
-        r"^(?:phone|tel|telephone|numéro|numero|téléphone)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*[:#=]\s*",
+        r"^(?:phone|tel|telephone|numéro|numero|téléphone|mobile|cell(?:ulaire)?)\s*[:#=\-]?\s*|^(?:account|acct|compte)\s*(?:[:#=]|\s+)\s*",
         "",
         s,
         flags=re.IGNORECASE,
@@ -656,10 +656,6 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        base["current_plan"] = "Fiber 100"
-        base["current_plan_speed"] = "100 Mbps"
-        base["current_internet_plan"] = "Fiber 100"
-        base["current_internet_speed"] = "100 Mbps"
         base["payment_ledger"] = [
             {
                 "payment_id": f"PMT-{pmt_num}",
@@ -985,10 +981,6 @@ def lookup_account_impl(  # pragma: no cover
             spoken_summary="Compte d'affaires identifié." if lang.startswith("fr") else "Business account identified.",
         )
 
-    acc_services = list(account.get("active_services", ["mobile", "internet"]))
-    is_net = "internet" in acc_services
-    plan_lbl = ("Fibre 100" if lang.startswith("fr") else "Fiber 100") if is_net else ("Forfait mobilité" if lang.startswith("fr") else "Mobility Plan")
-    plan_spd = ("100 Mbit/s" if lang.startswith("fr") else "100 Mbps") if is_net else ""
     return ok_reply(
         {
             "account_id": account["account_id"],
@@ -996,9 +988,6 @@ def lookup_account_impl(  # pragma: no cover
             "phone_last4": account["phone"][-4:],
             "caller_provided_phone_last4": state["caller_provided_phone_last4"],
             "account_status": account.get("status", "active"),
-            "current_plan": plan_lbl,
-            "current_plan_speed": plan_spd,
-            "active_services": acc_services,
         },
         reference,
         language=lang,
