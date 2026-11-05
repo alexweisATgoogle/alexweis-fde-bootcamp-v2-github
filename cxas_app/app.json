@@ -457,6 +457,15 @@
         "default": false,
         "required": []
       }
+    },
+    {
+      "name": "card_on_file_status",
+      "description": "Status of the card on file (active or declined_expired) for delinquent payment handling.",
+      "schema": {
+        "type": "STRING",
+        "default": "active",
+        "required": []
+      }
     }
   ],
   "guardrails": [

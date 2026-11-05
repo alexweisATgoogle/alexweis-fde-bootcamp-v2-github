@@ -978,8 +978,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
-            base["card_on_file_status"] = "declined_expired"
+        base["card_on_file_status"] = "active"
         base["region"] = "Region-B"
         base["payment_ledger"] = [
             {
@@ -1975,8 +1974,8 @@ def submit_request_impl(  # pragma: no cover
         # Authentic delinquent account saved card on file decline on Attempt 1
         acc_id = str(state.get("account_id") or "")
         account_obj = find_account(acc_id) if acc_id else None
-        card_on_file_status = str(account_obj.get("card_on_file_status", "active") if account_obj else "active")
-        if not state.get("payment_declined_once") and card_on_file_status == "declined_expired":
+        card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
+        if is_saved_card and not state.get("payment_declined_once") and card_on_file_status == "declined_expired":
             state["payment_declined_once"] = True
             dec_last4 = c_digits[-4:] if len(c_digits) >= 4 else "7742"
             state["declined_card_last4"] = dec_last4
@@ -2235,6 +2234,7 @@ def submit_request_impl(  # pragma: no cover
                     "days_display": str(refund_days),
                     "adjustment_type": "remboursement_trop_percu" if lang.startswith("fr") else "overpayment_refund",
                     "status_code": "approuve" if lang.startswith("fr") else "approved",
+                    "refund_confirmation_pattern": spoken_line("refund_confirmation_pattern", lang),
                 },
                 reference,
                 language=lang,
@@ -2277,6 +2277,7 @@ def submit_request_impl(  # pragma: no cover
                 "days_display": str(refund_days),
                 "adjustment_type": "credit_de_courtoisie" if lang.startswith("fr") else "courtesy_credit",
                 "status_code": "approuve" if lang.startswith("fr") else "approved",
+                "refund_confirmation_pattern": spoken_line("refund_confirmation_pattern", lang),
             },
             reference,
             language=lang,

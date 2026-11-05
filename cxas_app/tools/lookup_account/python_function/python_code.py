@@ -683,8 +683,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
-            base["card_on_file_status"] = "declined_expired"
+        base["card_on_file_status"] = "active"
         base["region"] = "Region-B"
         base["payment_ledger"] = [
             {
@@ -964,6 +963,7 @@ def lookup_account_impl(  # pragma: no cover
     state["phone_last4"] = account["phone"][-4:]
     state["past_due_balance"] = float(account.get("past_due_balance", 85.50))
     state["card_last4"] = str(account.get("card_last4", "7742"))
+    state["card_on_file_status"] = str(account.get("card_on_file_status", "active"))
     raw_digits = only_digits(raw_ident)
     is_account_ident = (
         raw_ident.upper().startswith("ACC-")

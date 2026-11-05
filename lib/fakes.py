@@ -765,8 +765,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
         base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        if ref_id not in ("A1001", "ACC-1002", "A1003", "A1004"):
-            base["card_on_file_status"] = "declined_expired"
+        base["card_on_file_status"] = "active"
         base["region"] = "Region-B"
         base["payment_ledger"] = [
             {
