@@ -1107,7 +1107,8 @@ def submit_request_impl(
 
     # 3. Open Support Ticket Status (M6) — Now authenticated
     if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
-        tid_match = re.search(r"\b((?:INC|TKT|SR|CASE|TT)-?\d{4,8}|T\d{4,8})\b", clean_summary, re.IGNORECASE)
+        haystack = f"{clean_summary} {str(state.get('last_user_utterance') or '')}"
+        tid_match = re.search(r"\b([A-Za-z]{1,5}-?\d{4,8})\b", haystack)
         tid = tid_match.group(1).upper() if tid_match else "T88219"
         ticket = TICKETS.get(
             tid,
@@ -1585,9 +1586,10 @@ def submit_request_impl(
         account_obj = find_account(acc_id) if acc_id else None
         card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
         is_primary_slot = any(p in turn_haystack or p in str(state.get("request_summary") or "").lower() for p in ("primary card", "carte principale"))
+        has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
         is_declined_digits = c_digits in DECLINED_CARD_LAST4
         should_decline_saved = is_saved_card and not state.get("payment_declined_once") and (
-            card_on_file_status == "declined_expired" or is_primary_slot or is_declined_digits
+            card_on_file_status == "declined_expired" or is_primary_slot or has_card_mismatch or is_declined_digits
         )
         if should_decline_saved:
             state["payment_declined_once"] = True

@@ -932,6 +932,12 @@ def test_ve_08_incident_ticket_extraction() -> None:
     assert res["data"]["ticket_id"] == "INC-882910"
     assert res["data"]["status"] == "in_progress"
 
+    # Arbitrary prefix and hyphenated ticket format
+    res2 = submit_request_impl("Check status of ticket SYS-12345", action="check_ticket", state=st)
+    assert res2["status"] == "ok"
+    assert res2["data"]["ticket_id"] == "SYS-12345"
+    assert res2["data"]["status"] == "in_progress"
+
 
 def test_ve_47_warranty_preground_faq_fields() -> None:
     st = {"account_id": "A1001", "logged_in": True}
