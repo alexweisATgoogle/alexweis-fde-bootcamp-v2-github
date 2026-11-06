@@ -2021,6 +2021,7 @@ def submit_request_impl(  # pragma: no cover
                 "dtmf",
             )
         )
+        is_primary_slot = any(p in turn_haystack or p in str(state.get("request_summary") or "").lower() for p in ("primary card", "carte principale", "primary", "principale"))
         if not c_digits and not is_explicit_saved_mention:
             if has_keypad_action:
                 is_saved_card = False
@@ -2031,7 +2032,7 @@ def submit_request_impl(  # pragma: no cover
                 is_saved_card = True
                 c_digits = str(state.get("card_last4") or "")
         elif c_digits:
-            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742") or is_explicit_saved_mention
+            is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742") or is_explicit_saved_mention or is_primary_slot
         else:
             is_saved_card = True
             c_digits = str(state.get("card_last4") or "")
@@ -2040,11 +2041,9 @@ def submit_request_impl(  # pragma: no cover
         acc_id = str(state.get("account_id") or "")
         account_obj = find_account(acc_id) if acc_id else None
         card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
-        is_primary_slot = any(p in turn_haystack or p in str(state.get("request_summary") or "").lower() for p in ("primary card", "carte principale", "primary", "principale"))
-        has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
         is_declined_digits = c_digits in DECLINED_CARD_LAST4
         should_decline_saved = is_saved_card and not state.get("payment_declined_once") and (
-            card_on_file_status == "declined_expired" or is_primary_slot or has_card_mismatch or is_declined_digits
+            card_on_file_status == "declined_expired" or is_primary_slot or is_declined_digits
         )
         if should_decline_saved:
             state["payment_declined_once"] = True
