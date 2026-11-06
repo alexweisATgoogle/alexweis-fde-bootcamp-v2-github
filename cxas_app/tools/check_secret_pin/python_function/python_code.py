@@ -830,6 +830,15 @@ def check_secret_pin_impl(  # pragma: no cover
             },
             language=lang,
         )
+    if verified_pin and digits == verified_pin:
+        state["logged_in"] = True
+        state["auth_status"] = "pass"
+        return ok_reply(
+            {"verified": True, "logged_in": True},
+            reference,
+            language=lang,
+            spoken_summary=spoken_line("pin_verified", lang),
+        )
     is_step_up = bool(
         state.get("logged_in")
         or state.get("auth_status") == "pass"

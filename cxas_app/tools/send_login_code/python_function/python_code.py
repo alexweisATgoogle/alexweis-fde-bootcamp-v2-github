@@ -617,14 +617,23 @@ def send_login_code_impl(  # pragma: no cover
     state["auth_status"] = "code_sent"
     state["login_code_sent"] = True
     dest_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
+    is_email = bool(kwargs.get("destination_email") or "email" in str(state.get("last_user_utterance", "")).lower() or "courriel" in str(state.get("last_user_utterance", "")).lower())
+    spoken = (
+        ("Code de connexion envoyé par courriel." if lang.startswith("fr") else "Login code sent to email.")
+        if is_email
+        else ("Code de connexion envoyé." if lang.startswith("fr") else "Login code sent.")
+    )
+    data_res: dict[str, Any] = {
+        "sent": True,
+        "already_verified": False,
+        "destination_last4": dest_last4,
+    }
+    if is_email:
+        data_res["channel"] = "email"
     return ok_reply(
-        {
-            "sent": True,
-            "already_verified": False,
-            "destination_last4": dest_last4,
-        },
+        data_res,
         reference,
         language=lang,
-        spoken_summary="Code de connexion envoyé." if lang.startswith("fr") else "Login code sent.",
+        spoken_summary=spoken,
     )
 # --- END GENERATED SHARED BUNDLE ---

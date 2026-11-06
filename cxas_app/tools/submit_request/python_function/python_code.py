@@ -1561,7 +1561,7 @@ def submit_request_impl(  # pragma: no cover
     # 3. Open Support Ticket Status (M6) — Now authenticated
     if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
         haystack = f"{clean_summary} {str(state.get('last_user_utterance') or '')}"
-        tid_match = re.search(r"\b([A-Za-z]{1,5}-?\d{4,8})\b", haystack)
+        tid_match = re.search(r"\b((?!(?:MOB|ACC|BUS|PORT)-)[A-Za-z]{2,5}-\d{3,8}|(?:INC|TKT|SR|CASE|TT)\d{4,8}|T\d{4,8})\b", haystack)
         tid = tid_match.group(1).upper() if tid_match else "T88219"
         ticket = TICKETS.get(
             tid,

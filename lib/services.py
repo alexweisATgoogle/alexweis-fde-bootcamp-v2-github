@@ -470,15 +470,24 @@ def send_login_code_impl(
     state["auth_status"] = "code_sent"
     state["login_code_sent"] = True
     dest_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
+    is_email = bool(kwargs.get("destination_email") or "email" in str(state.get("last_user_utterance", "")).lower() or "courriel" in str(state.get("last_user_utterance", "")).lower())
+    spoken = (
+        ("Code de connexion envoyé par courriel." if lang.startswith("fr") else "Login code sent to email.")
+        if is_email
+        else ("Code de connexion envoyé." if lang.startswith("fr") else "Login code sent.")
+    )
+    data_res: dict[str, Any] = {
+        "sent": True,
+        "already_verified": False,
+        "destination_last4": dest_last4,
+    }
+    if is_email:
+        data_res["channel"] = "email"
     return ok_reply(
-        {
-            "sent": True,
-            "already_verified": False,
-            "destination_last4": dest_last4,
-        },
+        data_res,
         reference,
         language=lang,
-        spoken_summary="Code de connexion envoyé." if lang.startswith("fr") else "Login code sent.",
+        spoken_summary=spoken,
     )
 
 
@@ -676,6 +685,15 @@ def check_secret_pin_impl(
                 "lockout_triggered": False,
             },
             language=lang,
+        )
+    if verified_pin and digits == verified_pin:
+        state["logged_in"] = True
+        state["auth_status"] = "pass"
+        return ok_reply(
+            {"verified": True, "logged_in": True},
+            reference,
+            language=lang,
+            spoken_summary=spoken_line("pin_verified", lang),
         )
     is_step_up = bool(
         state.get("logged_in")
@@ -1108,7 +1126,7 @@ def submit_request_impl(
     # 3. Open Support Ticket Status (M6) — Now authenticated
     if clean_action in ("check_ticket", "ticket_status") or any(k in low for k in ("ticket", "billet")):
         haystack = f"{clean_summary} {str(state.get('last_user_utterance') or '')}"
-        tid_match = re.search(r"\b([A-Za-z]{1,5}-?\d{4,8})\b", haystack)
+        tid_match = re.search(r"\b((?!(?:MOB|ACC|BUS|PORT)-)[A-Za-z]{2,5}-\d{3,8}|(?:INC|TKT|SR|CASE|TT)\d{4,8}|T\d{4,8})\b", haystack)
         tid = tid_match.group(1).upper() if tid_match else "T88219"
         ticket = TICKETS.get(
             tid,
