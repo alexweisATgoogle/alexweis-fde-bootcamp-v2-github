@@ -390,7 +390,7 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {
             "monthly_rate": 20.0,
             "rate_display": "20.00",
             "description": "Live local and international sports channels",
-            "channels": ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"],
+            "channels": ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS", "Golf Central", "Racing Live"],
         },
     ],
 }

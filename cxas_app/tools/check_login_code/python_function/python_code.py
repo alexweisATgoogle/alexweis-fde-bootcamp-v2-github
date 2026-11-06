@@ -935,8 +935,6 @@ def check_login_code_impl(  # pragma: no cover
         )
     state["auth_status"] = "pass"
     state["logged_in"] = True
-    if len(digits) == 6:
-        state["six_digit_otp_verified"] = True
     if len(digits) == 4 and not state.get("verified_pin"):
         state["verified_pin"] = digits
     if is_step_up:

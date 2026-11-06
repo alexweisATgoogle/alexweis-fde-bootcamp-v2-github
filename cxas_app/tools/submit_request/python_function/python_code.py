@@ -301,7 +301,7 @@ PLAN_CATALOG: dict[str, list[dict[str, Any]]] = {  # pragma: no cover
             "monthly_rate": 20.0,
             "rate_display": "20.00",
             "description": "Live local and international sports channels",
-            "channels": ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"],
+            "channels": ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS", "Golf Central", "Racing Live"],
         },
     ],
 }
@@ -2724,7 +2724,7 @@ def submit_request_impl(  # pragma: no cover
             tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
             total_with_tax = round(tv_rate + tax_amt, 2)
             pkg_name_fr = "Forfait Sports" if pkg["package_id"] == "TV-SPORTS" else pkg["name"]
-            channels_fr = ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
+            channels_fr = ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS", "Golf Central", "Courses en direct"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
             res_dict = {
                 "package_id": pkg["package_id"],
                 "package_name": pkg_name_fr if lang.startswith("fr") else pkg["name"],

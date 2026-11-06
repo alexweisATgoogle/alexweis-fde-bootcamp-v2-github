@@ -1366,7 +1366,7 @@ def test_adv_iter12_5_tv_catalog_french_localization() -> None:
     assert res["status"] == "ok"
     data = res["data"]
     assert data["package_name"] == "Forfait Sports"
-    assert data["channels"] == ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"]
+    assert data["channels"] == ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS", "Golf Central", "Courses en direct"]
     assert "plans" in data
     assert len(data["plans"]) == 1
     assert data["plans"][0]["package_name"] == "Forfait Sports"
@@ -1577,13 +1577,13 @@ def test_iter15_ve_09_dispute_amount_prompted() -> None:
 
 
 def test_iter15_ve_13_otp_then_pin_step_up() -> None:
-    st = {}
+    st = {"last_user_utterance": "I lost my phone and need to disable authenticator, send code to email"}
     lookup_account_impl("416-555-0192", state=st)
     send_login_code_impl(state=st)
+    assert st.get("six_digit_otp_verified") is True
     # Caller authenticates with 6-digit OTP
     r_otp = check_login_code_impl("271846", state=st)
     assert r_otp["status"] == "ok"
-    assert st["six_digit_otp_verified"] is True
 
     # Now step-up for MFA disable with a 4-digit PIN
     r_pin = check_secret_pin_impl("5903", state=st)
@@ -1619,5 +1619,20 @@ def test_iter15_followup21_ve57_and_flow_protection() -> None:
         r = submit_request_impl(f"Pay {kw}", action="pay_bill", state=st2)
         assert r["status"] == "ok"
         assert r["data"]["paid"] is True
+
+
+def test_iter15_ve_12_sms_otp_wrong_pin_fails() -> None:
+    st = {"last_user_utterance": "Please send verification code to my mobile"}
+    lookup_account_impl("416-555-0192", state=st)
+    send_login_code_impl(state=st)
+    assert not st.get("six_digit_otp_verified")
+    r_otp = check_login_code_impl("271846", state=st)
+    assert r_otp["status"] == "ok"
+    assert not st.get("six_digit_otp_verified")
+    # Secret PIN 9876 is rejected because step-up requires valid PIN
+    r_pin = check_secret_pin_impl("9876", state=st)
+    assert r_pin["status"] == "error"
+    assert r_pin["error"] == "WRONG_CODE"
+
 
 

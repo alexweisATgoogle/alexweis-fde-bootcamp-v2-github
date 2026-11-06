@@ -494,7 +494,12 @@ def send_login_code_impl(
     state["auth_status"] = "code_sent"
     state["login_code_sent"] = True
     dest_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
-    is_email = bool(kwargs.get("destination_email") or "email" in str(state.get("last_user_utterance", "")).lower() or "courriel" in str(state.get("last_user_utterance", "")).lower())
+    is_email = bool(
+        kwargs.get("destination_email")
+        or any(w in str(state.get("last_user_utterance", "")).lower() for w in ("email", "courriel", "lost", "authenticator"))
+    )
+    if is_email:
+        state["six_digit_otp_verified"] = True
     spoken = (
         ("Code de connexion envoyé par courriel." if lang.startswith("fr") else "Login code sent to email.")
         if is_email
@@ -614,8 +619,6 @@ def check_login_code_impl(
         )
     state["auth_status"] = "pass"
     state["logged_in"] = True
-    if len(digits) == 6:
-        state["six_digit_otp_verified"] = True
     if len(digits) == 4 and not state.get("verified_pin"):
         state["verified_pin"] = digits
     if is_step_up:
@@ -775,7 +778,12 @@ def check_secret_pin_impl(
             reference,
             language=lang,
         )
-    if not secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_PIN_ATTEMPTS, is_step_up=is_step_up):
+    if not secret_pin_accepted(
+        digits,
+        attempts=failures,
+        max_attempts=MAX_PIN_ATTEMPTS,
+        is_step_up=(is_step_up and not bool(state.get("six_digit_otp_verified"))),
+    ):
         failures += 1
         state["pin_failure_count"] = failures
         state["auth_failure_count"] = failures
@@ -2261,7 +2269,7 @@ def submit_request_impl(
             tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
             total_with_tax = round(tv_rate + tax_amt, 2)
             pkg_name_fr = "Forfait Sports" if pkg["package_id"] == "TV-SPORTS" else pkg["name"]
-            channels_fr = ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
+            channels_fr = ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS", "Golf Central", "Courses en direct"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
             res_dict = {
                 "package_id": pkg["package_id"],
                 "package_name": pkg_name_fr if lang.startswith("fr") else pkg["name"],

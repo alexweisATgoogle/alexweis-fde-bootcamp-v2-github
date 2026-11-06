@@ -959,7 +959,12 @@ def check_secret_pin_impl(  # pragma: no cover
             reference,
             language=lang,
         )
-    if not secret_pin_accepted(digits, attempts=failures, max_attempts=MAX_PIN_ATTEMPTS, is_step_up=is_step_up):
+    if not secret_pin_accepted(
+        digits,
+        attempts=failures,
+        max_attempts=MAX_PIN_ATTEMPTS,
+        is_step_up=(is_step_up and not bool(state.get("six_digit_otp_verified"))),
+    ):
         failures += 1
         state["pin_failure_count"] = failures
         state["auth_failure_count"] = failures

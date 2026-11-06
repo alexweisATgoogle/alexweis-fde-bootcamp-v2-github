@@ -696,7 +696,12 @@ def send_login_code_impl(  # pragma: no cover
     state["auth_status"] = "code_sent"
     state["login_code_sent"] = True
     dest_last4 = str(state.get("caller_provided_phone_last4") or state.get("phone_last4") or "")
-    is_email = bool(kwargs.get("destination_email") or "email" in str(state.get("last_user_utterance", "")).lower() or "courriel" in str(state.get("last_user_utterance", "")).lower())
+    is_email = bool(
+        kwargs.get("destination_email")
+        or any(w in str(state.get("last_user_utterance", "")).lower() for w in ("email", "courriel", "lost", "authenticator"))
+    )
+    if is_email:
+        state["six_digit_otp_verified"] = True
     spoken = (
         ("Code de connexion envoyé par courriel." if lang.startswith("fr") else "Login code sent to email.")
         if is_email
