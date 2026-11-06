@@ -1,0 +1,68 @@
+{
+  "label": "smoke-80ab1bc",
+  "timestamp": "2026-11-06T06:32:46Z",
+  "commit": "80ab1bc",
+  "git_sha": "80ab1bc",
+  "commits": [
+    "80ab1bc"
+  ],
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "88fd3f59-6fdc-413a-92b9-91e67410fc8d"
+  ],
+  "evaluation_runs": [
+    "0d84d630-d177-45ea-ad8b-2beb3424ff24"
+  ],
+  "runs_per_eval": 3,
+  "is_full_run": false,
+  "is_holdout": false,
+  "eval_count": 4,
+  "evals": 4,
+  "strict_pass": 1,
+  "strict_pass_rate": 0.25,
+  "majority_pass": 3,
+  "majority_pass_rate": 0.75,
+  "individual_passed": 7,
+  "individual_total": 12,
+  "passes": 7,
+  "total": 12,
+  "p": 0.5833,
+  "predicted_strict_3_of_3": 0.79,
+  "avg_pass_turns": 5.06,
+  "avg_pass_tool_calls": 5.83,
+  "per_eval": {
+    "VE-08": {
+      "pass": 2,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.5,
+      "avg_pass_tool_calls": 5.0
+    },
+    "VE-15": {
+      "pass": 2,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 5.0,
+      "avg_pass_tool_calls": 5.5
+    },
+    "VE-17": {
+      "pass": 3,
+      "total": 3,
+      "infra": 0,
+      "verdict": "PASS",
+      "avg_pass_turns": 4.67,
+      "avg_pass_tool_calls": 7.0
+    },
+    "VE-57": {
+      "pass": 0,
+      "total": 3,
+      "infra": 0,
+      "verdict": "FAIL"
+    }
+  },
+  "tool_errors": 0,
+  "tool_error_pages_checked": 5,
+  "tool_error_samples": []
+}

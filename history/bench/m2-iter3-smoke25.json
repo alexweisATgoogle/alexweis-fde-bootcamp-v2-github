@@ -1,14 +1,14 @@
 {
   "label": "m2-iter3-smoke25",
   "timestamp": "2026-11-03T20:21:44Z",
-  "commit": "5c36abf",
-  "git_sha": "5c36abf",
+  "commit": "",
+  "git_sha": "",
   "commits": [
     "5c36abf"
   ],
   "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
   "app_versions": [
-    "(draft)"
+    "f6784e59-6fda-421e-9937-102dabcc9672"
   ],
   "evaluation_runs": [
     "c5fbdc02-5838-40b9-a9e0-929bda0a206e"

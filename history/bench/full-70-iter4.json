@@ -1,14 +1,14 @@
 {
   "label": "full-70-iter4",
   "timestamp": "2026-11-03T03:15:46Z",
-  "commit": "0a45da8",
-  "git_sha": "0a45da8",
+  "commit": "",
+  "git_sha": "",
   "commits": [
     "0a45da8"
   ],
   "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
   "app_versions": [
-    "(draft)"
+    "8c47dddf-51f8-43fe-a0e5-c171bc811d5b"
   ],
   "evaluation_runs": [
     "b985377c-a196-4c8a-b7aa-8dbc5ab623c3",
