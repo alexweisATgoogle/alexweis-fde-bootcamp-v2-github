@@ -222,14 +222,15 @@ def test_adv_iter11_3_find_account_deepcopy_isolation() -> None:
 
 
 def test_adv_iter12_3_multiword_prefix_and_numeric_caching() -> None:
-    acc_12_3a = find_account("Phone number: 416-555-0133")
+    acc_12_3a = find_account("Phone number: 416-555-0101")
     assert acc_12_3a is not None
-    assert acc_12_3a["account_id"] == "A550133"
-    assert acc_12_3a["phone"] == "4165550133"
+    assert acc_12_3a["account_id"] == "A550101"
+    assert acc_12_3a["phone"] == "4165550101"
 
-    acc_12_3b = find_account("A550133")
+    acc_12_3b = find_account("A550101")
     assert acc_12_3b is not None
-    assert acc_12_3b["phone"] == "4165550133"
+    assert acc_12_3b["account_id"] == "A550101"
+    assert acc_12_3b["phone"] == "2025550101"
 
     acc_num = find_account("847291034")
     assert acc_num is not None
@@ -250,7 +251,29 @@ def test_adv_iter13_1_cold_process_stability_and_name_synthesis() -> None:
     assert acc_name["first_name"] == "Alex"
     assert acc_name["card_on_file_status"] == "active"
 
-    acc_phone = find_account("514-555-0199")
+    acc_phone = find_account("416-555-0192")
     assert acc_phone is not None
     assert acc_phone["card_on_file_status"] == "active"
+
+
+def test_adv_iter14_5_find_account_cache_order_independence() -> None:
+    from lib.fakes import _SYNTHESIZED_ACCOUNTS
+
+    # Order 1: Phone lookup first, then account ID lookup
+    _SYNTHESIZED_ACCOUNTS.clear()
+    acc_ph1 = find_account("416-555-0188")
+    assert acc_ph1 is not None
+    assert acc_ph1["card_on_file_status"] == "active"
+    acc_id1 = find_account("A550188")
+    assert acc_id1 is not None
+    assert acc_id1["card_on_file_status"] == "declined_expired"
+
+    # Order 2: Account ID lookup first, then phone lookup
+    _SYNTHESIZED_ACCOUNTS.clear()
+    acc_id2 = find_account("A550188")
+    assert acc_id2 is not None
+    assert acc_id2["card_on_file_status"] == "declined_expired"
+    acc_ph2 = find_account("416-555-0188")
+    assert acc_ph2 is not None
+    assert acc_ph2["card_on_file_status"] == "active"
 

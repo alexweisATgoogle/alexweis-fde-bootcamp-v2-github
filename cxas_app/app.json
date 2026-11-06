@@ -441,6 +441,15 @@
       }
     },
     {
+      "name": "step_up_verified",
+      "description": "True when step-up verification factor has succeeded for sensitive changes.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
       "name": "outage_announce_pending",
       "description": "True when an active outage was found by outage_check, consumed by enforce_outage_utterance.",
       "schema": {

@@ -79,6 +79,7 @@ ERROR_CODES = (  # pragma: no cover
     "NO_PLANS_IN_BUDGET",
     "NO_PAYMENT_FOUND",
     "PHYSICAL_DAMAGE_EXCLUDED",
+    "STEP_UP_REQUIRED",
 )
 
 ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
@@ -194,6 +195,57 @@ ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
         "Physical damage is excluded from manufacturer warranty.",
         "Offer out-of-warranty repair options.",
     ),
+    "STEP_UP_REQUIRED": (
+        "Step-up verification is required before proceeding.",
+        "Prompt the caller for their 4-digit secret security PIN on the keypad.",
+    ),
+}
+
+ERROR_CODE_DEFAULTS_FR: dict[str, tuple[str, str]] = {  # pragma: no cover
+    "STEP_UP_REQUIRED": (
+        "Une vérification supplémentaire est requise avant de continuer.",
+        "Demander à l'appelant son NIP de sécurité à 4 chiffres sur le clavier.",
+    ),
+    "NOT_LOGGED_IN": (
+        "L'appelant n'a pas complété l'authentification.",
+        "Connecter l'appelant avec send_login_code et check_login_code, puis réessayer.",
+    ),
+    "WRONG_CODE": (
+        "Le code ne correspond pas.",
+        "Informer l'appelant que le code est erroné et lui demander de réessayer.",
+    ),
+    "WRONG_PIN": (
+        "Le NIP secret ne correspond pas.",
+        "Informer l'appelant que le NIP est erroné et lui demander de réessayer.",
+    ),
+    "TOO_MANY_ATTEMPTS": (
+        "Trop de tentatives erronées lors de cet appel.",
+        "Appeler handover_to_person, prononcer handoff_message et appeler end_session.",
+    ),
+    "LOCKED_OUT": (
+        "L'appelant est verrouillé après trop de tentatives infructueuses.",
+        "Appeler handover_to_person, prononcer handoff_message et appeler end_session.",
+    ),
+    "CARD_DECLINED": (
+        "La carte a été refusée.",
+        "Informer l'appelant que la carte a été refusée et demander un autre mode de paiement.",
+    ),
+    "PAYMENT_DECLINED": (
+        "Le mode de paiement a été refusé.",
+        "Informer l'appelant que le paiement a été refusé et demander un autre mode de paiement.",
+    ),
+    "INVALID_INPUT": (
+        "Les données fournies sont invalides.",
+        "Demander à l'appelant de répéter les informations clairement.",
+    ),
+    "NOT_FOUND": (
+        "Aucun dossier correspondant trouvé.",
+        "Demander à l'appelant de répéter l'identifiant chiffre par chiffre.",
+    ),
+    "NOT_IDENTIFIED": (
+        "Le compte de l'appelant n'a pas encore été trouvé.",
+        "Appeler lookup_account ou utiliser le compte actif de la session.",
+    ),
 }
 
 class _StatusStr(str):  # pragma: no cover
@@ -237,10 +289,14 @@ def error_reply(  # pragma: no cover
     """Build an error reply; `code` must be one of ERROR_CODES."""
     if code not in ERROR_CODES:
         raise ValueError(f"unknown error code {code!r}; add it to ERROR_CODES first")
-    default_msg, default_action = ERROR_CODE_DEFAULTS.get(
-        code,
-        ("The request could not be completed.", "Explain the issue to the caller."),
-    )
+    is_fr = bool(language and str(language).lower().startswith("fr"))
+    if is_fr and code in ERROR_CODE_DEFAULTS_FR:
+        default_msg, default_action = ERROR_CODE_DEFAULTS_FR[code]
+    else:
+        default_msg, default_action = ERROR_CODE_DEFAULTS.get(
+            code,
+            ("The request could not be completed.", "Explain the issue to the caller."),
+        )
     msg = message or default_msg
     action = agent_action or default_action
     if reference is None:

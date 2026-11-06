@@ -322,6 +322,11 @@ def test_telco_domain_actions_and_edge_cases() -> None:
     # 9. Address change & MFA & Cancellation
     addr = submit_request_impl("Update mailing address to 123 Main St", action="change_address", state=st)
     assert addr["status"] == "ok" and addr["data"]["submitted"] is True
+    mfa_req = submit_request_impl("Turn off two factor auth", action="disable_mfa", state=st)
+    assert mfa_req["status"] == "error" and mfa_req["error"] == "STEP_UP_REQUIRED"
+    assert st["step_up_active"] is True
+    pin_step = check_secret_pin_impl("5903", state=st)
+    assert pin_step["status"] == "ok" and st["step_up_verified"] is True
     mfa_off = submit_request_impl("Turn off two factor auth", action="disable_mfa", state=st)
     assert mfa_off["status"] == "ok" and mfa_off["data"]["mfa_enabled"] is False
     mfa_on = submit_request_impl("Turn on two factor auth", action="enable_mfa", state=st)
@@ -584,6 +589,12 @@ def test_sports_tv_not_hijacked_by_port_in() -> None:
 
 def test_french_mfa_action_aliases_and_localization() -> None:
     st = {"logged_in": True, "account_id": "A1001", "auth_status": "pass"}
+    res_step = submit_request_impl(summary="Désactiver mon authentification", action="desactiver_mfa", state=st, language="fr-CA")
+    assert res_step["status"] == "error"
+    assert res_step["error"] == "STEP_UP_REQUIRED"
+    assert st["step_up_active"] is True
+    pin_step = check_secret_pin_impl("5903", state=st, language="fr-CA")
+    assert pin_step["status"] == "ok" and st["step_up_verified"] is True
     res_dis = submit_request_impl(summary="Désactiver mon authentification", action="desactiver_mfa", state=st, language="fr-CA")
     assert res_dis["status"] == "ok"
     assert res_dis["data"]["mfa_enabled"] is False
@@ -1221,8 +1232,8 @@ def test_ve_28_password_reset_alias() -> None:
 
 
 def test_ve_57_delinquent_card_decline_and_retry() -> None:
-    # Delinquent account A550133 has card_on_file_status="declined_expired"
-    st = {"account_id": "A550133", "past_due_balance": 85.50, "card_last4": "7742", "logged_in": True}
+    # Delinquent account A550101 has card_on_file_status="declined_expired"
+    st = {"account_id": "A550101", "past_due_balance": 85.50, "card_last4": "7742", "logged_in": True}
     # Attempt 1: tries saved card on file
     r1 = submit_request_impl("Pay past due balance with card on file", action="pay_bill", state=st)
     assert r1["status"] == "error"
@@ -1313,7 +1324,7 @@ def test_adv_iter11_6_french_pay_bill_and_plans_localization() -> None:
 
 
 def test_ve_57_explicit_card_on_file_mention_in_summary() -> None:
-    st = {"account_id": "A550133", "past_due_balance": 85.50, "logged_in": True}
+    st = {"account_id": "A550101", "past_due_balance": 85.50, "logged_in": True}
     r1 = submit_request_impl(
         "Pay full balance using primary card on file ending in 6677",
         action="pay_bill",
@@ -1429,3 +1440,97 @@ def test_adv_iter13_5_fr_ca_plan_localizations() -> None:
     assert res_mob["status"] == "ok"
     mob_names = [p["name"] for p in res_mob["data"]["plans"]]
     assert "Plus 5G 50 Go" in mob_names
+
+
+def test_iter15_ve_68_mobile_precedence_and_ontario_tax_pregrounding() -> None:
+    # VE-68 mobile query precedence over gigabit matching
+    st = {"account_id": "A1001", "logged_in": True}
+    res_mob = submit_request_impl("I want a new cell phone plan with 50 gigabytes of data", action="search_plans", state=st)
+    assert res_mob["status"] == "ok"
+    assert "plans" in res_mob["data"]
+    plan_names = [p["name"] for p in res_mob["data"]["plans"]]
+    assert "Plus 5G 50GB" in plan_names
+
+    # VE-45 Ontario 13% tax pregrounding on plans
+    p0 = res_mob["data"]["plans"][0]
+    assert p0["tax_rate_percent"] == 13.0
+    assert "monthly_total_with_tax" in p0
+    assert "monthly_total_with_tax_display" in p0
+
+    # Tax pregrounding on upgrade
+    res_upg = submit_request_impl("Upgrade my internet", action="upgrade", tier="Fibre 500", state=st)
+    assert res_upg["status"] == "ok"
+    assert res_upg["data"]["tax_rate_percent"] == 13.0
+    assert "monthly_total_with_tax" in res_upg["data"]
+    assert "monthly_total_with_tax_display" in res_upg["data"]
+
+
+def test_iter15_ve_01_french_cancellation_and_landline_inference() -> None:
+    st_fr = {"account_id": "A1001", "logged_in": True}
+    res_fr = submit_request_impl(
+        "Je souhaite annuler ma ligne résidentielle",
+        action="cancel",
+        service="ligne résidentielle",
+        language="fr-CA",
+        state=st_fr,
+    )
+    assert res_fr["status"] == "ok"
+    assert res_fr["data"]["cancelled_service"] == "ligne_résidentielle"
+    assert res_fr["data"]["service_name"] == "Ligne résidentielle"
+    assert res_fr["data"]["standalone_plan_name"] == "Fibre 1,5 Gbps"
+    assert res_fr["data"]["effective_date"] == "fin_cycle_facturation"
+
+    # Test internet cancellation omits remaining_service
+    res_net = submit_request_impl(
+        "Je souhaite annuler mon forfait internet",
+        action="cancel",
+        service="internet",
+        language="fr-CA",
+        state=st_fr,
+    )
+    assert res_net["status"] == "ok"
+    assert "remaining_service" not in res_net["data"]
+    assert "remaining_services" not in res_net["data"]
+
+
+def test_iter15_ve_57_keypad_decline_and_mismatch() -> None:
+    st = {"account_id": "A550101", "past_due_balance": 85.50, "card_last4": "7742", "logged_in": True}
+    # Attempt 1: keypad entry with primary card or card on file phrase declines
+    r1 = submit_request_impl(
+        "Use my primary card entered on keypad",
+        action="pay_bill",
+        card_last4="7742",
+        has_keypad_action=True,
+        state=st,
+    )
+    assert r1["status"] == "error"
+    assert r1["error"] == "CARD_DECLINED"
+    assert st["payment_declined_once"] is True
+
+    # Attempt 2: replacement card on keypad succeeds
+    r2 = submit_request_impl(
+        "Use new card entered on keypad",
+        action="pay_bill",
+        card_last4="3782",
+        has_keypad_action=True,
+        state=st,
+    )
+    assert r2["status"] == "ok"
+    assert r2["data"]["paid"] is True
+
+
+def test_iter15_ve_12_disable_mfa_step_up_enforcement() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    # Direct disable_mfa without step-up returns STEP_UP_REQUIRED
+    res = submit_request_impl("Turn off two factor authentication", action="disable_mfa", state=st)
+    assert res["status"] == "error"
+    assert res["error"] == "STEP_UP_REQUIRED"
+    assert st.get("step_up_active") is True
+    assert st.get("step_up_verified") is not True
+
+    # French localization
+    res_fr = submit_request_impl("Désactiver l'authentification à deux facteurs", action="disable_mfa", language="fr-CA", state=st)
+    assert res_fr["status"] == "error"
+    assert res_fr["error"] == "STEP_UP_REQUIRED"
+    assert "Une vérification supplémentaire" in res_fr["error_message"]
+

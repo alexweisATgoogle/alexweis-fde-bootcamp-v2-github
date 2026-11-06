@@ -60,5 +60,15 @@ def test_error_reply_shape_and_unknown_codes() -> None:
         defaulted = error_reply(code, data={"lockout_triggered": True})
         assert defaulted["error"] == code
         assert defaulted["lockout_triggered"] is True
+    # Test STEP_UP_REQUIRED and French localization
+    step_up_en = error_reply("STEP_UP_REQUIRED")
+    assert step_up_en["error"] == "STEP_UP_REQUIRED"
+    assert "Step-up verification" in step_up_en["error_message"]
+
+    step_up_fr = error_reply("STEP_UP_REQUIRED", language="fr-CA")
+    assert step_up_fr["error"] == "STEP_UP_REQUIRED"
+    assert "Une vérification supplémentaire" in step_up_fr["error_message"]
+    assert "NIP" in step_up_fr["agent_action"]
+
     with pytest.raises(ValueError):
         error_reply("MADE_UP", "x", "y", "R000003")

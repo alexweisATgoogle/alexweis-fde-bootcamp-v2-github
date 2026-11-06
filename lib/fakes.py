@@ -707,10 +707,10 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
                 }
             ],
         }
-        _SYNTHESIZED_ACCOUNTS[acc_key] = copy.deepcopy(acc_dict)
-        _SYNTHESIZED_ACCOUNTS[digits] = _SYNTHESIZED_ACCOUNTS[acc_key]
-        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
-        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[digits] = copy.deepcopy(acc_dict)
+        _SYNTHESIZED_ACCOUNTS[digits_10] = _SYNTHESIZED_ACCOUNTS[digits]
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[digits]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[digits]
         return copy.deepcopy(acc_dict)
     if not has_alpha and (7 <= len(digits) <= 12):
         if set(digits) == {"0"} or digits in BLOCKED_CALLER_NUMBERS:
@@ -747,10 +747,9 @@ def find_account(identifier: Any) -> dict[str, Any] | None:
                 }
             ],
         }
-        _SYNTHESIZED_ACCOUNTS[acc_key] = copy.deepcopy(acc_dict)
-        _SYNTHESIZED_ACCOUNTS[digits] = _SYNTHESIZED_ACCOUNTS[acc_key]
-        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
-        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
+        _SYNTHESIZED_ACCOUNTS[digits] = copy.deepcopy(acc_dict)
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[digits]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[digits]
         return copy.deepcopy(acc_dict)
     if has_alpha and not any(c.isdigit() for c in raw_str) and len(raw_str.split()) >= 2:
         pmt_num = int(hashlib.sha256(raw_str.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000

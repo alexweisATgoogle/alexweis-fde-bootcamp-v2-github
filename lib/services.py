@@ -353,6 +353,8 @@ def lookup_account_impl(
         state["pin_failure_count"] = 0
         state["pin_attempts"] = 0
         state.pop("verified_pin", None)
+        state["step_up_verified"] = False
+        state["step_up_active"] = False
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]
@@ -500,6 +502,11 @@ def check_login_code_impl(
 ) -> dict[str, Any]:
     """Check the code the caller read back. Sets auth_status to pass on match."""
     state = _get_state(state, session_state, reset_if_locked=True)
+    is_step_up = bool(
+        state.get("logged_in")
+        or state.get("auth_status") == "pass"
+        or state.get("step_up_active")
+    )
     _ensure_default_profile(state)
     lang = _session_language(state, language)
     mock_err = _check_mock_error(state, lang, "check_login_code")
@@ -510,6 +517,8 @@ def check_login_code_impl(
     state["last_tracking_id"] = reference
     if state.get("auth_status") == "pass":
         state["logged_in"] = True
+        if is_step_up:
+            state["step_up_verified"] = True
         return ok_reply(
             {"verified": True, "logged_in": True},
             reference,
@@ -584,6 +593,8 @@ def check_login_code_impl(
     state["logged_in"] = True
     if len(digits) == 4 and not state.get("verified_pin"):
         state["verified_pin"] = digits
+    if is_step_up:
+        state["step_up_verified"] = True
     state["auth_failure_count"] = 0
     state["login_attempts"] = 0
     return ok_reply(
@@ -603,6 +614,11 @@ def check_secret_pin_impl(
 ) -> dict[str, Any]:
     """Check the caller's secret PIN as a fallback or step-up authentication factor."""
     state = _get_state(state, session_state, reset_if_locked=True)
+    is_step_up = bool(
+        state.get("logged_in")
+        or state.get("auth_status") == "pass"
+        or state.get("step_up_active")
+    )
     _ensure_default_profile(state)
     lang = _session_language(state, language)
     mock_err = _check_mock_error(state, lang, "check_secret_pin")
@@ -691,17 +707,14 @@ def check_secret_pin_impl(
     if verified_pin and digits == verified_pin:
         state["logged_in"] = True
         state["auth_status"] = "pass"
+        if is_step_up:
+            state["step_up_verified"] = True
         return ok_reply(
             {"verified": True, "logged_in": True},
             reference,
             language=lang,
             spoken_summary=spoken_line("pin_verified", lang),
         )
-    is_step_up = bool(
-        state.get("logged_in")
-        or state.get("auth_status") == "pass"
-        or state.get("step_up_active")
-    )
     if is_step_up:
         state["step_up_active"] = True
     failures = max(
@@ -773,6 +786,8 @@ def check_secret_pin_impl(
     state["auth_status"] = "pass"
     state["logged_in"] = True
     state["verified_pin"] = digits
+    if is_step_up:
+        state["step_up_verified"] = True
     state["pin_failure_count"] = 0
     state["auth_failure_count"] = 0
     state["pin_attempts"] = 0
@@ -1287,20 +1302,61 @@ def submit_request_impl(
             )
 
         state["service_cancelled"] = True
+        is_home_phone = (
+            any(k in low for k in (
+                "ligne résidentielle", "ligne residentielle", "ligne fixe",
+                "téléphone résidentiel", "telephone residentiel",
+                "línea fija", "linea fija", "teléfono fijo", "telefono fijo",
+                "home phone", "landline", "residential",
+            ))
+            or clean_service in ("home_phone", "landline")
+        )
+        is_tv = not is_home_phone and (
+            clean_service == "tv"
+            or any(k in low for k in ("tv", "télé", "tele", "fibe"))
+        )
+        is_internet = not is_home_phone and not is_tv and (
+            clean_service == "internet"
+            or any(k in low for k in ("internet", "fiber", "fibre", "broadband"))
+        )
+        if is_home_phone:
+            canc_svc = "ligne_résidentielle" if lang.startswith("fr") else "home_phone"
+            svc_name = "Ligne résidentielle" if lang.startswith("fr") else "Home phone"
+            rem_svc = "internet"
+        elif is_tv:
+            canc_svc = "télévision" if lang.startswith("fr") else "tv"
+            svc_name = "Télévision" if lang.startswith("fr") else "TV"
+            rem_svc = "internet"
+        elif is_internet:
+            canc_svc = "internet"
+            svc_name = "Internet Fibre" if lang.startswith("fr") else "Fiber Internet"
+            rem_svc = None
+        else:
+            canc_svc = "mobilité" if lang.startswith("fr") else "mobility"
+            svc_name = "Mobilité" if lang.startswith("fr") else "Mobility"
+            rem_svc = "internet"
+
+        eff_date = "fin_cycle_facturation" if lang.startswith("fr") else relative_date(0)
+        ret_data: dict[str, Any] = {
+            "cancelled": True,
+            "cancellation_id": "C99214",
+            "cancelled_service": canc_svc,
+            "service_name": svc_name,
+            "early_cancellation_fee": 150.00,
+            "fee_display": "150.00",
+            "effective_date": eff_date,
+            "retention_offer_declined": True,
+        }
+        if rem_svc is not None:
+            ret_data["remaining_service"] = rem_svc
+            ret_data["remaining_monthly_rate"] = 105.00
+            ret_data["remaining_monthly_rate_display"] = "105.00"
+            ret_data["standalone_internet_rate"] = 105.00
+            ret_data["standalone_internet_rate_display"] = "105.00"
+            ret_data["standalone_plan_name"] = "Fibre 1,5 Gbps" if lang.startswith("fr") else "Fiber 1.5 Gbps"
+
         return ok_reply(
-            {
-                "cancelled": True,
-                "cancellation_id": "C99214",
-                "early_cancellation_fee": 150.00,
-                "fee_display": "150.00",
-                "effective_date": relative_date(0),
-                "remaining_service": "internet",
-                "remaining_monthly_rate": 105.00,
-                "remaining_monthly_rate_display": "105.00",
-                "standalone_internet_rate": 105.00,
-                "standalone_internet_rate_display": "105.00",
-                "standalone_plan_name": "Fiber 1.5 Gbps",
-            },
+            ret_data,
             reference,
             language=lang,
             spoken_summary="Annulation de service traitée." if lang.startswith("fr") else "Service cancellation processed.",
@@ -1610,8 +1666,11 @@ def submit_request_impl(
         card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
         has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
         is_declined_digits = c_digits in DECLINED_CARD_LAST4
-        should_decline_saved = is_saved_card and not state.get("payment_declined_once") and (
-            card_on_file_status == "declined_expired" or is_primary_slot or has_card_mismatch or is_declined_digits
+        should_decline_saved = not state.get("payment_declined_once") and (
+            (is_saved_card and card_on_file_status == "declined_expired")
+            or is_primary_slot
+            or has_card_mismatch
+            or is_declined_digits
         )
         if should_decline_saved:
             state["payment_declined_once"] = True
@@ -1955,7 +2014,11 @@ def submit_request_impl(
     # 10. Multi-Factor Authentication Configuration
     if clean_action in ("enable_mfa", "disable_mfa") or any(k in low for k in ("mfa", "2fa", "two-factor", "authentification à deux facteurs", "double facteur")):
         if clean_action == "disable_mfa" or any(k in low for k in ("disable", "turn off", "deactivate", "remove", "désactiver", "desactiver", "supprimer", "enlever")):
+            if not state.get("step_up_verified"):
+                state["step_up_active"] = True
+                return error_reply("STEP_UP_REQUIRED", reference=reference, language=lang)
             state["mfa_enabled"] = False
+            state["step_up_active"] = False
             return ok_reply(
                 {"mfa_enabled": False, "status": "désactivé" if lang.startswith("fr") else "disabled"},
                 reference,
@@ -2144,8 +2207,12 @@ def submit_request_impl(
             if b_match and any(w in low for w in ("budget", "under", "max", "maximum", "moins de")):
                 budget = float(b_match.group(1))
 
-        is_internet = clean_service in ("internet", "fiber", "fibre", "broadband") or any(
-            k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse")
+        is_mobile_req = clean_service in ("mobile", "mobility", "wireless", "cellulaire") or any(
+            m in low for m in ("mobile", "mobility", "cellulaire", "cellular")
+        )
+        is_internet = not is_mobile_req and (
+            clean_service in ("internet", "fiber", "fibre", "broadband")
+            or any(k in low for k in ("fiber", "fibre", "internet", "gigabit", "speed", "vitesse"))
         )
 
         if is_internet:
@@ -2176,11 +2243,16 @@ def submit_request_impl(
                     tier = all_internet[0]  # Fiber 100 ($50.00)
                 else:
                     tier = all_internet[2]  # Gigabit Fiber ($90.00)
+                tier_rate = float(tier["monthly_rate"])
+                tax_total = round(tier_rate * 1.13, 2)
                 return ok_reply(
                     {
                         "plan_name": tier["name"],
                         "monthly_rate": tier["monthly_rate"],
                         "rate_display": tier["rate_display"],
+                        "tax_rate_percent": 13.0,
+                        "monthly_total_with_tax": tax_total,
+                        "monthly_total_with_tax_display": display_amount(tax_total),
                         "speed_mbps": tier["speed_mbps"],
                         "download_mbps": tier.get("download_mbps", tier["speed_mbps"]),
                         "upload_mbps": tier.get("upload_mbps", 750 if tier["speed_mbps"] >= 1000 else tier["speed_mbps"]),
@@ -2206,12 +2278,17 @@ def submit_request_impl(
             curated_net = []
             for p in matched_net:
                 p_name = net_names_fr.get(p["plan_id"], p["name"]) if lang.startswith("fr") else p["name"]
+                p_rate = float(p["monthly_rate"])
+                p_tax_total = round(p_rate * 1.13, 2)
                 p_net = {
                     "plan_id": p["plan_id"],
                     "name": p_name,
                     "plan_name": p_name,
                     "monthly_rate": p["monthly_rate"],
                     "rate_display": p["rate_display"],
+                    "tax_rate_percent": 13.0,
+                    "monthly_total_with_tax": p_tax_total,
+                    "monthly_total_with_tax_display": display_amount(p_tax_total),
                     "speed_mbps": p["speed_mbps"],
                     "download_mbps": p.get("download_mbps", p["speed_mbps"]),
                     "upload_mbps": p.get("upload_mbps", p["speed_mbps"]),
@@ -2226,6 +2303,8 @@ def submit_request_impl(
                     p_net["taxes_note"] = "taxes applicables en sus"
                 curated_net.append(p_net)
             top = curated_net[-1]
+            top_rate = float(top["monthly_rate"])
+            top_tax_total = round(top_rate * 1.13, 2)
             return ok_reply(
                 {
                     "plans": curated_net,
@@ -2233,6 +2312,9 @@ def submit_request_impl(
                     "plan_name": top["name"],
                     "monthly_rate": top["monthly_rate"],
                     "rate_display": top["rate_display"],
+                    "tax_rate_percent": 13.0,
+                    "monthly_total_with_tax": top_tax_total,
+                    "monthly_total_with_tax_display": display_amount(top_tax_total),
                     "speed_mbps": top["speed_mbps"],
                     "download_mbps": top["download_mbps"],
                     "upload_mbps": top["upload_mbps"],
@@ -2286,12 +2368,17 @@ def submit_request_impl(
                 else:
                     selected_mob = all_mobility[2]  # Default to mid-tier MOB-45 ($45.00)
 
+            mob_rate = float(selected_mob["monthly_rate"])
+            mob_tax_total = round(mob_rate * 1.13, 2)
             return ok_reply(
                 {
                     "plan_name": selected_mob["name"],
                     "plan_id": selected_mob["plan_id"],
                     "monthly_rate": selected_mob["monthly_rate"],
                     "rate_display": selected_mob["rate_display"],
+                    "tax_rate_percent": 13.0,
+                    "monthly_total_with_tax": mob_tax_total,
+                    "monthly_total_with_tax_display": display_amount(mob_tax_total),
                     "data_gb": selected_mob["data_gb"],
                     "network": selected_mob["network"],
                     "upgrade_confirmed": True,
@@ -2341,6 +2428,11 @@ def submit_request_impl(
         curated_localized = []
         for p in curated:
             p_dict = dict(p)
+            p_rate = float(p["monthly_rate"])
+            p_tax_total = round(p_rate * 1.13, 2)
+            p_dict["tax_rate_percent"] = 13.0
+            p_dict["monthly_total_with_tax"] = p_tax_total
+            p_dict["monthly_total_with_tax_display"] = display_amount(p_tax_total)
             if lang.startswith("fr"):
                 p_dict["name"] = mob_names_fr.get(p["plan_id"], p["name"])
                 p_dict["plan_name"] = p_dict["name"]
