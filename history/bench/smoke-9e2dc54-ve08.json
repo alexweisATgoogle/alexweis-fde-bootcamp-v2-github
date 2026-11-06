@@ -1,0 +1,46 @@
+{
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "7960b8c6-0019-40c9-9410-8d38a9fee5b2"
+  ],
+  "commit": "9e2dc54",
+  "eval_count": 1,
+  "evals": [
+    "VE-08"
+  ],
+  "evaluation_runs": [
+    "3399a989-6a8a-4171-a2e5-27b2e4d8e5fb"
+  ],
+  "git_sha": "9e2dc540e1e405a1ceb0445d45ebce04709d8aa0",
+  "individual_passed": 2,
+  "individual_total": 3,
+  "is_full_run": false,
+  "is_holdout": false,
+  "label": "smoke-9e2dc54-ve08",
+  "majority_pass": 1,
+  "majority_pass_rate": 1.0,
+  "p": 0.6666666666666666,
+  "passes": 2,
+  "per_eval": [
+    {
+      "display_name": "sim__check_ticket_status_retry_strikes",
+      "fail_runs": 1,
+      "pass_runs": 2,
+      "passed": false,
+      "per_run_statuses": [
+        "PASS",
+        "PASS",
+        "FAIL"
+      ],
+      "total_runs": 3,
+      "ve_id": "VE-08",
+      "verdict": "FAIL"
+    }
+  ],
+  "predicted_strict_3_of_3": 0.3,
+  "runs_per_eval": 3,
+  "strict_pass": 0,
+  "strict_pass_rate": 0.0,
+  "tool_errors": 0,
+  "total": 3
+}

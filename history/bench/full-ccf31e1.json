@@ -1,600 +1,600 @@
 {
-  "label": "full-ccf31e1",
-  "timestamp": "2026-11-06T08:58:34Z",
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "2efc2417-6490-4a87-9bb3-7d84f880be0a"
+  ],
+  "avg_pass_tool_calls": 5.09,
+  "avg_pass_turns": 4.36,
   "commit": "ccf31e1",
-  "git_sha": "ccf31e1",
   "commits": [
     "ccf31e1"
   ],
-  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
-  "app_versions": [
-    "(draft)"
-  ],
+  "eval_count": 70,
+  "evals": 70,
   "evaluation_runs": [
     "371f9111-be0b-4d6b-bd63-05a6d8b5fed4",
     "43ad6e16-3877-49ca-9511-5bd4a53c4a13",
     "e30f7e92-8cbd-4cb7-8e2f-45c8fc8f6ae7"
   ],
-  "runs_per_eval": 3,
-  "is_full_run": true,
-  "is_holdout": false,
-  "eval_count": 70,
-  "evals": 70,
-  "strict_pass": 57,
-  "strict_pass_rate": 0.8143,
-  "majority_pass": 69,
-  "majority_pass_rate": 0.9857,
+  "git_sha": "ccf31e1a783670b196b98b5b82d028e1a885daea",
   "individual_passed": 196,
   "individual_total": 210,
-  "passes": 196,
-  "total": 210,
+  "is_full_run": true,
+  "is_holdout": false,
+  "label": "full-ccf31e1",
+  "majority_pass": 69,
+  "majority_pass_rate": 0.9857,
   "p": 0.9333,
-  "predicted_strict_3_of_3": 56.91,
-  "avg_pass_turns": 4.36,
-  "avg_pass_tool_calls": 5.09,
+  "passes": 196,
   "per_eval": {
     "VE-01": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-02": {
+      "avg_pass_tool_calls": 5.67,
+      "avg_pass_turns": 5.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.33,
-      "avg_pass_tool_calls": 5.67
+      "verdict": "PASS"
     },
     "VE-03": {
+      "avg_pass_tool_calls": 4.67,
+      "avg_pass_turns": 4.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.67,
-      "avg_pass_tool_calls": 4.67
+      "verdict": "PASS"
     },
     "VE-04": {
+      "avg_pass_tool_calls": 3.67,
+      "avg_pass_turns": 3.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 3.67,
-      "avg_pass_tool_calls": 3.67
+      "verdict": "PASS"
     },
     "VE-05": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-06": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.67,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     },
     "VE-07": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-08": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-09": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 5.5,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.5,
-      "avg_pass_tool_calls": 7.0
+      "verdict": "PASS"
     },
     "VE-10": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-11": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 4.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.67,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-12": {
+      "avg_pass_tool_calls": 8.0,
+      "avg_pass_turns": 6.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.0,
-      "avg_pass_tool_calls": 8.0
+      "verdict": "PASS"
     },
     "VE-13": {
+      "avg_pass_tool_calls": 7.5,
+      "avg_pass_turns": 4.5,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.5,
-      "avg_pass_tool_calls": 7.5
+      "verdict": "PASS"
     },
     "VE-14": {
+      "avg_pass_tool_calls": 4.5,
+      "avg_pass_turns": 6.0,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.0,
-      "avg_pass_tool_calls": 4.5
+      "verdict": "PASS"
     },
     "VE-15": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-16": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 7.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 7.33,
-      "avg_pass_tool_calls": 7.0
+      "verdict": "PASS"
     },
     "VE-17": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 5.5,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.5,
-      "avg_pass_tool_calls": 7.0
+      "verdict": "PASS"
     },
     "VE-18": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-19": {
+      "avg_pass_tool_calls": 5.33,
+      "avg_pass_turns": 4.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.67,
-      "avg_pass_tool_calls": 5.33
+      "verdict": "PASS"
     },
     "VE-20": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 7.0
+      "verdict": "PASS"
     },
     "VE-21": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-22": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-23": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-24": {
+      "avg_pass_tool_calls": 5.5,
+      "avg_pass_turns": 2.0,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 2.0,
-      "avg_pass_tool_calls": 5.5
+      "verdict": "PASS"
     },
     "VE-25": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 6.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.0,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-26": {
+      "avg_pass_tool_calls": 4.33,
+      "avg_pass_turns": 3.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 3.33,
-      "avg_pass_tool_calls": 4.33
+      "verdict": "PASS"
     },
     "VE-27": {
+      "avg_pass_tool_calls": 3.67,
+      "avg_pass_turns": 2.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 2.67,
-      "avg_pass_tool_calls": 3.67
+      "verdict": "PASS"
     },
     "VE-28": {
+      "avg_pass_tool_calls": 7.67,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.67,
-      "avg_pass_tool_calls": 7.67
+      "verdict": "PASS"
     },
     "VE-29": {
+      "avg_pass_tool_calls": 5.33,
+      "avg_pass_turns": 3.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 3.67,
-      "avg_pass_tool_calls": 5.33
+      "verdict": "PASS"
     },
     "VE-30": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 4.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.67,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-31": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     },
     "VE-32": {
+      "avg_pass_tool_calls": 4.5,
+      "avg_pass_turns": 6.5,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.5,
-      "avg_pass_tool_calls": 4.5
+      "verdict": "PASS"
     },
     "VE-33": {
+      "avg_pass_tool_calls": 3.33,
+      "avg_pass_turns": 2.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 2.67,
-      "avg_pass_tool_calls": 3.33
+      "verdict": "PASS"
     },
     "VE-34": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-35": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-36": {
+      "avg_pass_tool_calls": 3.67,
+      "avg_pass_turns": 2.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 2.67,
-      "avg_pass_tool_calls": 3.67
+      "verdict": "PASS"
     },
     "VE-37": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 2.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 2.33,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-38": {
+      "avg_pass_tool_calls": 4.67,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 4.67
+      "verdict": "PASS"
     },
     "VE-39": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-40": {
+      "avg_pass_tool_calls": 7.33,
+      "avg_pass_turns": 8.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 8.33,
-      "avg_pass_tool_calls": 7.33
+      "verdict": "PASS"
     },
     "VE-41": {
+      "avg_pass_tool_calls": 5.67,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.67,
-      "avg_pass_tool_calls": 5.67
+      "verdict": "PASS"
     },
     "VE-42": {
+      "avg_pass_tool_calls": 3.67,
+      "avg_pass_turns": 4.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.67,
-      "avg_pass_tool_calls": 3.67
+      "verdict": "PASS"
     },
     "VE-43": {
+      "avg_pass_tool_calls": 3.67,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.67,
-      "avg_pass_tool_calls": 3.67
+      "verdict": "PASS"
     },
     "VE-44": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-45": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     },
     "VE-46": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-47": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     },
     "VE-48": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     },
     "VE-49": {
+      "avg_pass_tool_calls": 5.67,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 5.67
+      "verdict": "PASS"
     },
     "VE-50": {
+      "avg_pass_tool_calls": 5.33,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 5.33
+      "verdict": "PASS"
     },
     "VE-51": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 6.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.33,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-52": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 5.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.33,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-53": {
+      "avg_pass_tool_calls": 4.0,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 4.0
+      "verdict": "PASS"
     },
     "VE-54": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-55": {
+      "avg_pass_tool_calls": 7.67,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 7.67
+      "verdict": "PASS"
     },
     "VE-56": {
+      "avg_pass_tool_calls": 7.67,
+      "avg_pass_turns": 6.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.33,
-      "avg_pass_tool_calls": 7.67
+      "verdict": "PASS"
     },
     "VE-57": {
+      "avg_pass_tool_calls": 9.0,
+      "avg_pass_turns": 7.0,
+      "infra": 0,
       "pass": 1,
       "total": 3,
-      "infra": 0,
-      "verdict": "FAIL",
-      "avg_pass_turns": 7.0,
-      "avg_pass_tool_calls": 9.0
+      "verdict": "FAIL"
     },
     "VE-58": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-59": {
+      "avg_pass_tool_calls": 5.0,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 5.0
+      "verdict": "PASS"
     },
     "VE-60": {
+      "avg_pass_tool_calls": 4.0,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.33,
-      "avg_pass_tool_calls": 4.0
+      "verdict": "PASS"
     },
     "VE-61": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.67,
-      "avg_pass_tool_calls": 7.0
+      "verdict": "PASS"
     },
     "VE-62": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-63": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 6.67,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.67,
-      "avg_pass_tool_calls": 7.0
+      "verdict": "PASS"
     },
     "VE-64": {
+      "avg_pass_tool_calls": 6.5,
+      "avg_pass_turns": 8.5,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 8.5,
-      "avg_pass_tool_calls": 6.5
+      "verdict": "PASS"
     },
     "VE-65": {
+      "avg_pass_tool_calls": 2.0,
+      "avg_pass_turns": 1.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 1.0,
-      "avg_pass_tool_calls": 2.0
+      "verdict": "PASS"
     },
     "VE-66": {
+      "avg_pass_tool_calls": 4.0,
+      "avg_pass_turns": 6.5,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.5,
-      "avg_pass_tool_calls": 4.0
+      "verdict": "PASS"
     },
     "VE-67": {
+      "avg_pass_tool_calls": 6.33,
+      "avg_pass_turns": 6.33,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 6.33,
-      "avg_pass_tool_calls": 6.33
+      "verdict": "PASS"
     },
     "VE-68": {
+      "avg_pass_tool_calls": 4.67,
+      "avg_pass_turns": 4.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 4.0,
-      "avg_pass_tool_calls": 4.67
+      "verdict": "PASS"
     },
     "VE-69": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 2,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     },
     "VE-70": {
+      "avg_pass_tool_calls": 6.0,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
       "pass": 3,
       "total": 3,
-      "infra": 0,
-      "verdict": "PASS",
-      "avg_pass_turns": 5.0,
-      "avg_pass_tool_calls": 6.0
+      "verdict": "PASS"
     }
   },
-  "tool_errors": 0,
+  "predicted_strict_3_of_3": 56.91,
+  "runs_per_eval": 3,
+  "strict_pass": 57,
+  "strict_pass_rate": 0.8143,
+  "timestamp": "2026-11-06T08:58:34Z",
   "tool_error_pages_checked": 14,
-  "tool_error_samples": []
+  "tool_error_samples": [],
+  "tool_errors": 0,
+  "total": 210
 }

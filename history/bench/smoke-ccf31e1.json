@@ -1,0 +1,110 @@
+{
+  "app_resource": "projects/fde-bootcamp/locations/us/apps/4b4c15ca-e354-425c-881e-2314a0ca01d0",
+  "app_versions": [
+    "2efc2417-6490-4a87-9bb3-7d84f880be0a"
+  ],
+  "avg_pass_tool_calls": 6.63,
+  "avg_pass_turns": 5.76,
+  "commit": "ccf31e1",
+  "commits": [
+    "ccf31e1"
+  ],
+  "eval_count": 9,
+  "evals": 9,
+  "evaluation_runs": [
+    "7a6f2e5f-19b5-4489-a721-0123e2f08e60"
+  ],
+  "git_sha": "ccf31e1a783670b196b98b5b82d028e1a885daea",
+  "individual_passed": 26,
+  "individual_total": 27,
+  "is_full_run": false,
+  "is_holdout": false,
+  "label": "smoke-ccf31e1",
+  "majority_pass": 9,
+  "majority_pass_rate": 1.0,
+  "p": 0.963,
+  "passes": 26,
+  "per_eval": {
+    "VE-01": {
+      "avg_pass_tool_calls": 5.67,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-12": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 6.67,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-15": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 5.33,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-17": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 5.67,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-18": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-45": {
+      "avg_pass_tool_calls": 5.67,
+      "avg_pass_turns": 5.0,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-57": {
+      "avg_pass_tool_calls": 8.0,
+      "avg_pass_turns": 5.5,
+      "infra": 0,
+      "pass": 2,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-64": {
+      "avg_pass_tool_calls": 7.0,
+      "avg_pass_turns": 9.33,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    },
+    "VE-68": {
+      "avg_pass_tool_calls": 5.33,
+      "avg_pass_turns": 4.33,
+      "infra": 0,
+      "pass": 3,
+      "total": 3,
+      "verdict": "PASS"
+    }
+  },
+  "predicted_strict_3_of_3": 8.04,
+  "runs_per_eval": 3,
+  "strict_pass": 8,
+  "strict_pass_rate": 0.8889,
+  "timestamp": "2026-11-06T08:44:16Z",
+  "tool_error_pages_checked": 1,
+  "tool_error_samples": [],
+  "tool_errors": 0,
+  "total": 27
+}
