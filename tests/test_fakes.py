@@ -236,7 +236,21 @@ def test_adv_iter12_3_multiword_prefix_and_numeric_caching() -> None:
     assert acc_num["card_on_file_status"] == "active"
     assert acc_num["region"] == "Region-B"
 
+def test_adv_iter13_1_cold_process_stability_and_name_synthesis() -> None:
+    from lib.fakes import _SYNTHESIZED_ACCOUNTS
 
+    _SYNTHESIZED_ACCOUNTS.clear()
+    acc_cold = find_account("A880144")
+    assert acc_cold is not None
+    assert acc_cold["phone_last4"] == "0144"
+    assert acc_cold["phone"] == "2025550144"
 
+    acc_name = find_account("Alex Morgan")
+    assert acc_name is not None
+    assert acc_name["first_name"] == "Alex"
+    assert acc_name["card_on_file_status"] == "active"
 
+    acc_phone = find_account("514-555-0199")
+    assert acc_phone is not None
+    assert acc_phone["card_on_file_status"] == "active"
 

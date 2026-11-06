@@ -134,4 +134,30 @@ def test_enforce_outage_negative_or_clear() -> None:
     assert enforce_outage_utterance(txt3, st3) == txt3
 
 
+def test_adv_iter13_3_near_future_french_transfer_strip() -> None:
+    st_fr = {"dispute_limit_exceeded": True, "language": "fr-CA"}
+    txt_fr = "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. Je vais vous transférer à un représentant immédiatement."
+    res_fr = enforce_handover_utterance(txt_fr, st_fr)
+    assert "représentant" not in res_fr
+    assert "spécialiste de la facturation maintenant" in res_fr
 
+    txt_fr2 = "Les contestations dépassant la limite automatisée nécessitent l'examen d'un spécialiste. Je vais vous mettre en contact avec un représentant."
+    res_fr2 = enforce_handover_utterance(txt_fr2, st_fr)
+    assert "mettre en contact avec" not in res_fr2
+    assert "spécialiste de la facturation maintenant" in res_fr2
+
+
+def test_adv_iter13_4_service_qualified_outage_expansion() -> None:
+    from lib.fakes import spoken_line
+
+    st_en = {"outage_announce_pending": True, "language": "en-US"}
+    txt_en = "I see there is an active internet outage in your area. We are investigating."
+    res_en = enforce_outage_utterance(txt_en, st_en)
+    assert res_en == spoken_line("outage_active", "en-US")
+    assert st_en["outage_announce_pending"] is False
+
+    st_fr = {"outage_announce_pending": True, "language": "fr-CA"}
+    txt_fr = "Je constate qu'il y a une panne réseau active dans votre secteur."
+    res_fr = enforce_outage_utterance(txt_fr, st_fr)
+    assert res_fr == spoken_line("outage_active", "fr-CA")
+    assert st_fr["outage_announce_pending"] is False

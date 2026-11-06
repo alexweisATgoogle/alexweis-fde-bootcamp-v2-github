@@ -547,6 +547,10 @@ def normalize_identifier(raw: object) -> dict[str, str]:  # pragma: no cover
         return {"kind": "account", "value": compact}
     return {"kind": "unknown", "value": s}
 
+def only_digits(text: Any) -> str:  # pragma: no cover
+    """Keep the digits of what the caller said ("(202) 555-0143" -> "2025550186")."""
+    return normalize_code(text)
+
 def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
     """Find an account by phone number or account number; None when there is none."""
     raw_str = re.sub(r"\.0+$", "", str(identifier or "").strip())
@@ -646,7 +650,7 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
             "preferred_language": "en-US",
             "business_flag": False,
             k_card_last4: "7742",
-            "card_on_file_status": "declined_expired" if is_phone else "active",
+            "card_on_file_status": "active",
             "past_due_balance": 85.50,
             "current_balance": 85.50,
             "region": "Region-B",
@@ -670,6 +674,31 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[acc_key]
         _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[acc_key]
         return copy.deepcopy(acc_dict)
+    if has_alpha and not any(c.isdigit() for c in raw_str) and len(raw_str.split()) >= 2:
+        pmt_num = int(hashlib.sha256(raw_str.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
+        ref_id = f"A{int(hashlib.sha256(raw_str.encode('utf-8')).hexdigest()[:6], 16) % 900000 + 100000}"
+        base = dict(ACCOUNTS[0])
+        base["account_id"] = ref_id
+        base["first_name"] = raw_str.split()[0].title()
+        base["phone"] = f"202555{ref_id[-4:]}"
+        base[k_last4] = ref_id[-4:]
+        base[k_caller] = ""
+        base["business_flag"] = False
+        base["card_on_file_status"] = "active"
+        base["region"] = "Region-B"
+        base["payment_ledger"] = [
+            {
+                "payment_id": f"PMT-{pmt_num}",
+                "amount": 85.50,
+                "posted_date": relative_date(-1),
+                "method": "online_banking",
+                "status": "cleared",
+            }
+        ]
+        _SYNTHESIZED_ACCOUNTS[ref_id] = copy.deepcopy(base)
+        _SYNTHESIZED_ACCOUNTS[raw_str] = _SYNTHESIZED_ACCOUNTS[ref_id]
+        _SYNTHESIZED_ACCOUNTS[raw] = _SYNTHESIZED_ACCOUNTS[ref_id]
+        return copy.deepcopy(base)
     is_ref_or_acc = (
         (has_alpha and any(c.isdigit() for c in raw_str) and not (raw.startswith("ACC-") and len(raw) < 8) and re.fullmatch(r"[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})+", raw_str))
         or norm["kind"] == "reference"
@@ -680,10 +709,15 @@ def find_account(identifier: Any) -> dict[str, Any] | None:  # pragma: no cover
         pmt_num = int(hashlib.sha256(ref_id.encode("utf-8")).hexdigest()[:6], 16) % 90000 + 10000
         base = dict(ACCOUNTS[0])
         base["account_id"] = ref_id
-        base[k_last4] = base["phone"][-4:]
+        if len(digits) >= 4:
+            base["phone"] = digits if len(digits) == 10 else f"202555{digits[-4:]}"
+            base[k_last4] = digits[-4:]
+        else:
+            base[k_last4] = base["phone"][-4:]
         base[k_caller] = ""
         base["business_flag"] = "BUS" in ref_id.upper()
-        base["card_on_file_status"] = "active"
+        is_delinq = ("DELINQ" in str(ref_id).upper() or (str(ref_id).upper().startswith("A") and len(only_digits(ref_id)) == 6))
+        base["card_on_file_status"] = "declined_expired" if is_delinq else "active"
         base["region"] = "Region-B"
         base["payment_ledger"] = [
             {
@@ -735,10 +769,6 @@ def ok_reply(  # pragma: no cover
         if key in payload:
             reply[key] = payload[key]
     return reply
-
-def only_digits(text: Any) -> str:  # pragma: no cover
-    """Keep the digits of what the caller said ("(202) 555-0143" -> "2025550186")."""
-    return normalize_code(text)
 
 SPOKEN_LINES: dict[str, dict[str, str]] = {  # pragma: no cover
     "greeting": {

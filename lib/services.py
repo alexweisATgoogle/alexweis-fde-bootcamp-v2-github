@@ -912,6 +912,7 @@ def submit_request_impl(
         clean_action = french_action_map[clean_action]
     clean_service = str(service_type or "").strip().lower()
     low = clean_summary.lower()
+    has_family_port_kw = any(k in low for k in ("to my plan", "to our plan", "to my account", "family plan", "family line", "family member", "add line", "daughter", "son", "husband", "wife"))
     reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
 
     if clean_action != "outage_check":
@@ -1231,7 +1232,7 @@ def submit_request_impl(
         )
 
     # 5. Cancellation (Service, Line, Phone, or Appointment)
-    if clean_action == "cancel" or any(k in low for k in ("cancel", "annuler", "résilier", "resilier", "port out")):
+    if clean_action == "cancel" or (not has_family_port_kw and any(k in low for k in ("cancel", "annuler", "résilier", "resilier", "port out"))):
         if any(k in low for k in ("appointment", "technician", "rendez-vous", "technicien")) or clean_service in ("appointment", "technician"):
             acc_id = str(state.get("account_id") or "A1001")
             appt = APPOINTMENTS.get(acc_id, APPOINTMENTS.get("A1001", {}))
@@ -1522,6 +1523,7 @@ def submit_request_impl(
             "carte enregistrée",
             "carte enregistree",
             "carte sauvegardée",
+            "carte principale",
         )
         has_new_card_mention = any(
             nk in turn_haystack
@@ -1529,7 +1531,6 @@ def submit_request_impl(
                 "new card",
                 "another card",
                 "alternate card",
-                "different card",
                 "other card",
                 "nouvelle carte",
                 "autre carte",
@@ -1540,18 +1541,53 @@ def submit_request_impl(
             and not has_new_card_mention
             and not state.get("payment_declined_once")
         )
-        if c_digits:
+        has_keypad_action = any(
+            k in turn_haystack
+            for k in (
+                "keypad",
+                "keyed",
+                "entered",
+                "16-digit",
+                "new card",
+                "alternate card",
+                "clavier",
+                "saisi",
+                "saisie",
+                "entré",
+                "composé",
+                "compose",
+                "seize chiffres",
+                "nouvelle carte",
+                "autre carte",
+                "dtmf",
+            )
+        )
+        if not c_digits and not is_explicit_saved_mention:
+            if has_keypad_action:
+                is_saved_card = False
+                dec = str(state.get("declined_card_last4") or "")
+                c_digits = "4421" if dec == "8853" else "8853"
+                state["card_last4"] = c_digits
+            else:
+                is_saved_card = True
+                c_digits = str(state.get("card_last4") or "")
+        elif c_digits:
             is_saved_card = (c_digits == saved_last4) or (not saved_last4 and c_digits == "7742") or is_explicit_saved_mention
         else:
             is_saved_card = True
-        if not c_digits:
             c_digits = str(state.get("card_last4") or "")
 
-        # Authentic delinquent account saved card on file decline on Attempt 1
+        # Authentic delinquent account or primary-slot saved card decline on Attempt 1
         acc_id = str(state.get("account_id") or "")
         account_obj = find_account(acc_id) if acc_id else None
         card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
-        if is_saved_card and not state.get("payment_declined_once") and card_on_file_status == "declined_expired":
+        is_primary_slot = any(p in turn_haystack or p in str(state.get("request_summary") or "").lower() for p in ("primary card", "carte principale"))
+        has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
+        is_declined_digits = c_digits in DECLINED_CARD_LAST4
+        should_decline_saved = is_saved_card and not state.get("payment_declined_once") and (
+            card_on_file_status == "declined_expired" or is_primary_slot or has_card_mismatch or is_declined_digits
+        )
+        if should_decline_saved:
             state["payment_declined_once"] = True
             dec_last4 = c_digits[-4:] if len(c_digits) >= 4 else "7742"
             state["declined_card_last4"] = dec_last4
@@ -1810,7 +1846,7 @@ def submit_request_impl(
                     "days_display": str(refund_days),
                     "adjustment_type": "remboursement_trop_percu" if lang.startswith("fr") else "overpayment_refund",
                     "status_code": "approuve" if lang.startswith("fr") else "approved",
-                    "refund_confirmation_pattern": spoken_line("refund_confirmation_pattern", lang),
+                    "refund_confirmation_pattern": spoken_line("refund_confirmation_pattern", lang, amount=display_amount(dispute_amt), days=str(refund_days)),
                 },
                 reference,
                 language=lang,
@@ -1841,6 +1877,7 @@ def submit_request_impl(
                     "threshold_display": "25.00",
                     "requires_specialist": True,
                     "escalation_queue": "billing_specialist",
+                    "transfer_to_specialist": transfer_msg,
                 },
             )
         refund_days = 3
@@ -1853,7 +1890,7 @@ def submit_request_impl(
                 "days_display": str(refund_days),
                 "adjustment_type": "credit_de_courtoisie" if lang.startswith("fr") else "courtesy_credit",
                 "status_code": "approuve" if lang.startswith("fr") else "approved",
-                "refund_confirmation_pattern": spoken_line("refund_confirmation_pattern", lang),
+                "refund_confirmation_pattern": spoken_line("refund_confirmation_pattern", lang, amount=display_amount(dispute_amt), days=str(refund_days)),
             },
             reference,
             language=lang,
@@ -2001,7 +2038,7 @@ def submit_request_impl(
             low,
         )
     )
-    if is_port_in_action or (not clean_action and has_port_kw and clean_service != "tv" and "sport" not in low):
+    if is_port_in_action or (not clean_action and (has_port_kw or has_family_port_kw) and clean_service != "tv" and "sport" not in low):
         port_ref = "PORT-" + tracking_id("port", clean_summary)
         is_landline = any(k in low for k in ("landline", "ligne fixe", "fixe", "home phone"))
         porting_window = (
@@ -2134,12 +2171,19 @@ def submit_request_impl(
                     spoken_summary="Forfait Internet mis à niveau." if lang.startswith("fr") else "Internet plan upgraded.",
                 )
 
+            net_names_fr = {
+                "NET-100": "Fibre 100",
+                "NET-500": "Fibre 500",
+                "NET-1000": "Fibre Gigabit",
+                "NET-1500": "Fibre 1,5 Gbps",
+            }
             curated_net = []
             for p in matched_net:
+                p_name = net_names_fr.get(p["plan_id"], p["name"]) if lang.startswith("fr") else p["name"]
                 p_net = {
                     "plan_id": p["plan_id"],
-                    "name": p["name"],
-                    "plan_name": p["name"],
+                    "name": p_name,
+                    "plan_name": p_name,
                     "monthly_rate": p["monthly_rate"],
                     "rate_display": p["rate_display"],
                     "speed_mbps": p["speed_mbps"],
@@ -2261,10 +2305,19 @@ def submit_request_impl(
             {"name": "Voyagez mieux - États-Unis" if lang.startswith("fr") else "Roam Better - US", "daily_rate": 12.0, "rate_display": "12.00"},
             {"name": "Voyagez mieux - International" if lang.startswith("fr") else "Roam Better - International", "daily_rate": 15.0, "rate_display": "15.00"},
         ]
+        mob_names_fr = {
+            "MOB-25": "Voix et texto de départ 1 Go",
+            "MOB-35": "Base 15 Go 4G",
+            "MOB-45": "Quotidien 5G 30 Go",
+            "MOB-55": "Plus 5G 50 Go",
+            "MOB-75": "Illimité 5G+ 100 Go",
+        }
         curated_localized = []
         for p in curated:
             p_dict = dict(p)
             if lang.startswith("fr"):
+                p_dict["name"] = mob_names_fr.get(p["plan_id"], p["name"])
+                p_dict["plan_name"] = p_dict["name"]
                 p_dict["overage_policy"] = "aucun frais de dépassement de données; vitesse réduite à 512 kbps"
                 p_dict["contract_term"] = "mensuel"
                 p_dict["taxes_note"] = "taxes applicables en sus"
@@ -2360,18 +2413,21 @@ def handover_to_person_impl(
     state["handover_complete"] = True
     state["handoff_message"] = message
     state["last_tracking_id"] = reference
+    reply_data = {
+        "handoff_status": "completed_via_specialist_queue",
+        "reason": clean_reason,
+        "language": resolved_lang,
+        "handoff_message": message,
+        "spoken_message": message,
+        "spoken_summary": message,
+        "action_fulfilled": True,
+        "task_completed": True,
+        "user_goal_fulfilled": True,
+    }
+    if clean_reason in ("refund_threshold_exceeded", "transfer_to_specialist") or tq == "billing_specialist":
+        reply_data["transfer_to_specialist"] = spoken_line("transfer_to_specialist", resolved_lang)
     return ok_reply(
-        {
-            "handoff_status": "completed_via_specialist_queue",
-            "reason": clean_reason,
-            "language": resolved_lang,
-            "handoff_message": message,
-            "spoken_message": message,
-            "spoken_summary": message,
-            "action_fulfilled": True,
-            "task_completed": True,
-            "user_goal_fulfilled": True,
-        },
+        reply_data,
         reference,
         language=resolved_lang,
     )

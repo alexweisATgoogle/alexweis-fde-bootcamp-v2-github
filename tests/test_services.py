@@ -1365,14 +1365,61 @@ def test_adv_iter12_1_outage_state_coupling() -> None:
     assert st.get("outage_announce_pending") is True
 
 
+def test_adv_iter13_2_attempt1_keypad_narration() -> None:
+    st = {"account_id": "A1001", "past_due_balance": 85.50, "logged_in": True}
+    res = submit_request_impl(
+        "I am entering my card numbers on keypad now [Enters 16-digit card number on keypad]",
+        action="pay_bill",
+        state=st,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["paid"] is True
+    assert res["data"]["card_last4"] == "8853"
+    assert res["data"]["amount"] == 85.50
 
 
+def test_adv_iter13_ve_24_limit_exceeded_specialist_grounding() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("Dispute $150 fee on bill", action="dispute", amount=150.0, state=st)
+    assert res["status"] == "error"
+    assert res["error"] == "LIMIT_EXCEEDED"
+    assert "transfer_to_specialist" in res["data"]
+    assert "billing specialist" in res["data"]["transfer_to_specialist"]
+
+    res_handover = handover_to_person_impl(reason="refund_threshold_exceeded", state=st)
+    assert res_handover["status"] == "ok"
+    assert "transfer_to_specialist" in res_handover["data"]
+    assert "billing specialist" in res_handover["data"]["transfer_to_specialist"]
 
 
+def test_adv_iter13_ve_25_refund_confirmation_interpolation() -> None:
+    st_en = {"account_id": "A1001", "logged_in": True}
+    res_en = submit_request_impl("Dispute $15 charge", action="dispute", amount=15.0, language="en-US", state=st_en)
+    assert res_en["status"] == "ok"
+    assert "$15.00" in res_en["data"]["refund_confirmation_pattern"]
+    assert "business days" in res_en["data"]["refund_confirmation_pattern"]
+
+    st_fr = {"account_id": "A1001", "logged_in": True}
+    res_fr = submit_request_impl("Contestation de 20 dollars", action="dispute", amount=20.0, language="fr-CA", state=st_fr)
+    assert res_fr["status"] == "ok"
+    assert "20.00 $" in res_fr["data"]["refund_confirmation_pattern"]
+    assert "jours ouvrables" in res_fr["data"]["refund_confirmation_pattern"]
 
 
+def test_adv_iter13_ve_66_family_line_transfer_port_in() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl("I want to transfer my family member's phone number to my plan", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["port_in_submitted"] is True
 
 
+def test_adv_iter13_5_fr_ca_plan_localizations() -> None:
+    res_net = submit_request_impl("plans internet", action="search_plans", service_type="internet", language="fr-CA", state={})
+    assert res_net["status"] == "ok"
+    plan_names = [p["name"] for p in res_net["data"]["plans"]]
+    assert "Fibre 500" in plan_names
 
-
-
+    res_mob = submit_request_impl("plans cellulaire", action="search_plans", service_type="mobile", language="fr-CA", state={})
+    assert res_mob["status"] == "ok"
+    mob_names = [p["name"] for p in res_mob["data"]["plans"]]
+    assert "Plus 5G 50 Go" in mob_names

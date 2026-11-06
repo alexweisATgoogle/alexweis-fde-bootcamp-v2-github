@@ -326,11 +326,13 @@ def enforce_outage_utterance(  # pragma: no cover
         or "there's an active outage" in low
         or "there is an active outage" in low
         or ("active outage" in low and "area" in low)
+        or bool(re.search(r"\bactive\s+\w+\s+outage\b", low) and "area" in low)
     )
     is_fr_outage = (
         (pending_announce and str(state_dict.get("language", "")).startswith("fr"))
         or "panne active dans votre secteur" in low
         or ("panne active" in low and "secteur" in low)
+        or bool(re.search(r"\bpanne\s+\w+\s+active\b", low) and "secteur" in low)
     )
     if not (is_en_outage or is_fr_outage):
         return text
@@ -444,7 +446,7 @@ def enforce_handover_utterance(  # pragma: no cover
         if has_explanation and not has_transfer:
             clean_text = re.sub(
                 r"(?:(?:i (?:will|shall|can|must|'m|am)?\s*(?:transferring|transfer|connect) you (?:to|with) (?:a |an )?(?:customer service |live )?representative(?: now| right away| immediately| shortly)?\.?)|"
-                r"(?:je vous (?:transf[eéè]re|transf[eéè]rerai?|mets en contact avec)\s*(?:[àa]\s+)?un repr[eé]sentant(?: maintenant| imm[eé]diatement| tout de suite)?\.?))",
+                r"(?:je (?:vais vous (?:transf[eéè]rer|mettre en contact avec)|vous (?:transf[eéè]re|transf[eéè]rerai?|mets en contact avec))\s*(?:[àa]\s+)?un repr[eé]sentant(?: maintenant| imm[eé]diatement| tout de suite)?\.?))",
                 "",
                 clean_text,
                 flags=re.IGNORECASE,

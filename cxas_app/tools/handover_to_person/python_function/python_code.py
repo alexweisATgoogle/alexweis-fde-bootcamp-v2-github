@@ -791,18 +791,21 @@ def handover_to_person_impl(  # pragma: no cover
     state["handover_complete"] = True
     state["handoff_message"] = message
     state["last_tracking_id"] = reference
+    reply_data = {
+        "handoff_status": "completed_via_specialist_queue",
+        "reason": clean_reason,
+        "language": resolved_lang,
+        "handoff_message": message,
+        "spoken_message": message,
+        "spoken_summary": message,
+        "action_fulfilled": True,
+        "task_completed": True,
+        "user_goal_fulfilled": True,
+    }
+    if clean_reason in ("refund_threshold_exceeded", "transfer_to_specialist") or tq == "billing_specialist":
+        reply_data["transfer_to_specialist"] = spoken_line("transfer_to_specialist", resolved_lang)
     return ok_reply(
-        {
-            "handoff_status": "completed_via_specialist_queue",
-            "reason": clean_reason,
-            "language": resolved_lang,
-            "handoff_message": message,
-            "spoken_message": message,
-            "spoken_summary": message,
-            "action_fulfilled": True,
-            "task_completed": True,
-            "user_goal_fulfilled": True,
-        },
+        reply_data,
         reference,
         language=resolved_lang,
     )
