@@ -1546,6 +1546,8 @@ def submit_request_impl(
             "carte enregistree",
             "carte sauvegardée",
             "carte principale",
+            "on file",
+            "au dossier",
         )
         has_new_card_mention = any(
             nk in turn_haystack
