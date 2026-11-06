@@ -849,6 +849,8 @@ def check_login_code_impl(  # pragma: no cover
         )
     state["auth_status"] = "pass"
     state["logged_in"] = True
+    if len(digits) == 4 and not state.get("verified_pin"):
+        state["verified_pin"] = digits
     state["auth_failure_count"] = 0
     state["login_attempts"] = 0
     return ok_reply(
