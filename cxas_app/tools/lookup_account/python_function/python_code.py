@@ -923,9 +923,14 @@ def lookup_account_impl(  # pragma: no cover
     reference = tracking_id("lookup_account", phone_or_account)
 
     raw_ident = str(phone_or_account or "").strip()
-    if raw_ident.lower() in ("caller_line_id", "current_line", "ani"):
+    is_keypad_ident = (raw_ident.lower() == "keypad_entry") or (
+        bool(raw_ident)
+        and not only_digits(raw_ident)
+        and any(m in raw_ident.lower() for m in ("clavier", "keypad", "dtmf", "saisi", "composé", "entered", "keyed"))
+    )
+    if raw_ident.lower() in ("caller_line_id", "current_line", "ani") or is_keypad_ident:
         account = dict(ACCOUNTS[0])
-        account["first_name"] = ""  # Prevent caller-name hallucination on CLID lookup
+        account["first_name"] = ""  # Prevent caller-name hallucination on CLID/keypad lookup
     elif not raw_ident:
         if lang.startswith("fr"):
             return error_reply(

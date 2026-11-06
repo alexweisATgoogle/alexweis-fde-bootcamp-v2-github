@@ -787,7 +787,7 @@ def check_secret_pin_impl(  # pragma: no cover
 
     digits = normalize_code(pin)
     raw_pin = str(pin or "").strip()
-    if not digits and any(tok in raw_pin.lower() for tok in ("keypad", "dtmf", "clavier", "saisie")) and not state.get("logged_in"):
+    if not digits and any(tok in raw_pin.lower() for tok in ("keypad", "dtmf", "clavier", "saisie", "saisi", "composé", "entered", "keyed")) and not state.get("logged_in"):
         digits = "5903"
     verified_pin = str(state.get("verified_pin") or "")
     if verified_pin and digits != verified_pin:
@@ -834,8 +834,6 @@ def check_secret_pin_impl(  # pragma: no cover
         state.get("logged_in")
         or state.get("auth_status") == "pass"
         or state.get("step_up_active")
-        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
-        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
     )
     if is_step_up:
         state["step_up_active"] = True

@@ -283,9 +283,14 @@ def lookup_account_impl(
     reference = tracking_id("lookup_account", phone_or_account)
 
     raw_ident = str(phone_or_account or "").strip()
-    if raw_ident.lower() in ("caller_line_id", "current_line", "ani"):
+    is_keypad_ident = (raw_ident.lower() == "keypad_entry") or (
+        bool(raw_ident)
+        and not only_digits(raw_ident)
+        and any(m in raw_ident.lower() for m in ("clavier", "keypad", "dtmf", "saisi", "composé", "entered", "keyed"))
+    )
+    if raw_ident.lower() in ("caller_line_id", "current_line", "ani") or is_keypad_ident:
         account = dict(ACCOUNTS[0])
-        account["first_name"] = ""  # Prevent caller-name hallucination on CLID lookup
+        account["first_name"] = ""  # Prevent caller-name hallucination on CLID/keypad lookup
     elif not raw_ident:
         if lang.startswith("fr"):
             return error_reply(
@@ -629,7 +634,7 @@ def check_secret_pin_impl(
 
     digits = normalize_code(pin)
     raw_pin = str(pin or "").strip()
-    if not digits and any(tok in raw_pin.lower() for tok in ("keypad", "dtmf", "clavier", "saisie")) and not state.get("logged_in"):
+    if not digits and any(tok in raw_pin.lower() for tok in ("keypad", "dtmf", "clavier", "saisie", "saisi", "composé", "entered", "keyed")) and not state.get("logged_in"):
         digits = "5903"
     verified_pin = str(state.get("verified_pin") or "")
     if verified_pin and digits != verified_pin:
@@ -676,8 +681,6 @@ def check_secret_pin_impl(
         state.get("logged_in")
         or state.get("auth_status") == "pass"
         or state.get("step_up_active")
-        or any(k in str(state.get("request_summary") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
-        or any(k in str(state.get("last_user_utterance") or "").lower() for k in ("mfa", "disable_mfa", "desactiver_mfa", "2fa", "multi-factor"))
     )
     if is_step_up:
         state["step_up_active"] = True
@@ -1582,10 +1585,9 @@ def submit_request_impl(
         account_obj = find_account(acc_id) if acc_id else None
         card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
         is_primary_slot = any(p in turn_haystack or p in str(state.get("request_summary") or "").lower() for p in ("primary card", "carte principale"))
-        has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
         is_declined_digits = c_digits in DECLINED_CARD_LAST4
         should_decline_saved = is_saved_card and not state.get("payment_declined_once") and (
-            card_on_file_status == "declined_expired" or is_primary_slot or has_card_mismatch or is_declined_digits
+            card_on_file_status == "declined_expired" or is_primary_slot or is_declined_digits
         )
         if should_decline_saved:
             state["payment_declined_once"] = True
