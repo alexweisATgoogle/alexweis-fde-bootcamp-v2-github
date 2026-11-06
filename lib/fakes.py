@@ -480,7 +480,7 @@ ACCOUNTS: tuple[dict[str, Any], ...] = (
         "status": "active",
         "preferred_language": "fr-CA",
         k_card_last4: "8853",
-        "card_on_file_status": "active",
+        "card_on_file_status": "declined_expired",
         "business_flag": False,
         "region": "Region-B",
         "past_due_balance": 0.0,

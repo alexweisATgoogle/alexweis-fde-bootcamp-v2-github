@@ -85,10 +85,10 @@ Customer goals handled by {@AGENT: specialist}:
       </action>
     </step>
     <step name="Caller Provides Phone Or Account">
-      <trigger>The caller has stated or entered a phone number or account number</trigger>
+      <trigger>The caller has stated a phone number, account number, or name</trigger>
       <action>
-        On Turn 1 only, single-digit "1" or "2" selects language; once locked, do not pass single digits to lookup_account. If the caller states they entered their account or phone on the keypad without visible digits, call {@TOOL: lookup_account} with phone_or_account="keypad_entry" and language. Otherwise call {@TOOL: lookup_account} with:
-        - phone_or_account: the number exactly as the caller gave it
+        On Turn 1 only, single-digit "1" or "2" selects language; once locked, do not pass single digits to lookup_account. If caller states keypad entry without digits, call {@TOOL: lookup_account} with phone_or_account="keypad_entry", language. Otherwise call {@TOOL: lookup_account} with:
+        - phone_or_account: the number or name exactly as the caller gave it
         - language: the caller active language code
       </action>
     </step>
