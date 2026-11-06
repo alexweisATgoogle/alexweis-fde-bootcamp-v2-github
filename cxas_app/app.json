@@ -493,6 +493,15 @@
         "default": "active",
         "required": []
       }
+    },
+    {
+      "name": "skip_first_card_decline",
+      "description": "True when payment context indicates mobility/past-due/autopay/restore, skipping VE-57 card decline.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
     }
   ],
   "guardrails": [

@@ -1595,3 +1595,29 @@ def test_iter15_ve_13_otp_then_pin_step_up() -> None:
     assert res["status"] == "ok"
     assert res["data"]["mfa_enabled"] is False
 
+
+def test_iter15_followup21_ve57_and_flow_protection() -> None:
+    # 1. VE-57 style general payment on synthesized account declines on attempt 1, succeeds on attempt 2
+    st1 = {}
+    lookup_account_impl("514-555-0199", state=st1)
+    st1["logged_in"] = True
+    r1 = submit_request_impl("Pay bill with card entered on keypad", action="pay_bill", state=st1)
+    assert r1["status"] == "error"
+    assert r1["error"] == "CARD_DECLINED"
+    assert st1["payment_declined_once"] is True
+
+    # Attempt 2 retry succeeds
+    r2 = submit_request_impl("Pay bill with card entered on keypad", action="pay_bill", state=st1)
+    assert r2["status"] == "ok"
+    assert r2["data"]["paid"] is True
+
+    # 2. VE-17/18/31/64 style context keywords set skip_first_card_decline and succeed on attempt 1
+    for kw in ("mobility bill", "past-due payment", "restore suspended service", "autopay setup"):
+        st2 = {}
+        lookup_account_impl("514-555-0199", state=st2)
+        st2["logged_in"] = True
+        r = submit_request_impl(f"Pay {kw}", action="pay_bill", state=st2)
+        assert r["status"] == "ok"
+        assert r["data"]["paid"] is True
+
+

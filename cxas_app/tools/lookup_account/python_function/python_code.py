@@ -535,6 +535,18 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
 
     return resolve_copy_locale(None)
 
+_DIRECT_PAY_CONTEXT_KEYWORDS = (  # pragma: no cover
+    "mobility", "mobile", "past-due", "past due", "suspend", "restore",
+    "cut off", "shut off", "disconnect", "late fee", "autopay",
+    "automatic", "pre-authorized",
+)
+
+def _update_payment_context(state: dict[str, Any], extra_text: str = "") -> None:  # pragma: no cover
+    """Capture mobility / past-due / restore / autopay context to distinguish standard flows from general payment."""
+    blob = f"{extra_text or ''} {state.get('last_user_utterance') or ''} {state.get('request_summary') or ''}".lower()
+    if any(k in blob for k in _DIRECT_PAY_CONTEXT_KEYWORDS):
+        state["skip_first_card_decline"] = True
+
 _SYNTHESIZED_ACCOUNTS: dict[str, dict[str, Any]] = {}  # pragma: no cover
 
 def normalize_code(value: Any) -> str:  # pragma: no cover
@@ -1061,6 +1073,9 @@ def lookup_account_impl(  # pragma: no cover
         state["step_up_active"] = False
         state["six_digit_otp_verified"] = False
         state["dispute_amount_prompted"] = False
+        state["skip_first_card_decline"] = False
+
+    _update_payment_context(state)
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]

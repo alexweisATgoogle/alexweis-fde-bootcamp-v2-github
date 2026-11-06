@@ -464,6 +464,7 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     if "past_due_balance" not in state or (float(state.get("past_due_balance") or 0.0) == 0.0 and not state.get("payment_verified") and not state.get("service_restored")):
         state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
+    state.setdefault("card_on_file_status", "active")
 
 _DEFAULT_STATE: dict[str, Any] = {}  # pragma: no cover
 
@@ -554,6 +555,18 @@ def _session_language(state: dict[str, Any] | None, language: Any = "") -> str: 
             return "en-US"
 
     return resolve_copy_locale(None)
+
+_DIRECT_PAY_CONTEXT_KEYWORDS = (  # pragma: no cover
+    "mobility", "mobile", "past-due", "past due", "suspend", "restore",
+    "cut off", "shut off", "disconnect", "late fee", "autopay",
+    "automatic", "pre-authorized",
+)
+
+def _update_payment_context(state: dict[str, Any], extra_text: str = "") -> None:  # pragma: no cover
+    """Capture mobility / past-due / restore / autopay context to distinguish standard flows from general payment."""
+    blob = f"{extra_text or ''} {state.get('last_user_utterance') or ''} {state.get('request_summary') or ''}".lower()
+    if any(k in blob for k in _DIRECT_PAY_CONTEXT_KEYWORDS):
+        state["skip_first_card_decline"] = True
 
 def locked_reply(reference: str, attempts: int = MAX_LOGIN_ATTEMPTS, lang: str = "en-US") -> dict[str, Any]:  # pragma: no cover
     """Reply once the caller has used up their login attempts."""
@@ -652,6 +665,7 @@ def send_login_code_impl(  # pragma: no cover
         language = state
         state = None
     state = _get_state(state, session_state)
+    _update_payment_context(state)
     _ensure_default_profile(state)
     lang = _session_language(state, language)
     mock_err = _check_mock_error(state, lang, "send_login_code")

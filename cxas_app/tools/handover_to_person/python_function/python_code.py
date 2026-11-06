@@ -538,6 +538,7 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:  # pragma: no cover
     if "past_due_balance" not in state or (float(state.get("past_due_balance") or 0.0) == 0.0 and not state.get("payment_verified") and not state.get("service_restored")):
         state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
+    state.setdefault("card_on_file_status", "active")
 
 MAX_LOGIN_ATTEMPTS = 3  # pragma: no cover
 

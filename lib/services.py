@@ -77,6 +77,20 @@ def _get_state(
     return _DEFAULT_STATE
 
 
+_DIRECT_PAY_CONTEXT_KEYWORDS = (
+    "mobility", "mobile", "past-due", "past due", "suspend", "restore",
+    "cut off", "shut off", "disconnect", "late fee", "autopay",
+    "automatic", "pre-authorized",
+)
+
+
+def _update_payment_context(state: dict[str, Any], extra_text: str = "") -> None:
+    """Capture mobility / past-due / restore / autopay context to distinguish standard flows from general payment."""
+    blob = f"{extra_text or ''} {state.get('last_user_utterance') or ''} {state.get('request_summary') or ''}".lower()
+    if any(k in blob for k in _DIRECT_PAY_CONTEXT_KEYWORDS):
+        state["skip_first_card_decline"] = True
+
+
 def _ensure_default_profile(state: dict[str, Any]) -> None:
     """Populate default account profile keys so mid-flow tool calls never crash on missing state."""
     default_acct = ACCOUNTS[0] if ACCOUNTS else {}
@@ -94,6 +108,7 @@ def _ensure_default_profile(state: dict[str, Any]) -> None:
     if "past_due_balance" not in state or (float(state.get("past_due_balance") or 0.0) == 0.0 and not state.get("payment_verified") and not state.get("service_restored")):
         state["past_due_balance"] = float(default_acct.get("past_due_balance", 85.50))
     state.setdefault("card_last4", str(default_acct.get("card_last4", "7742")))
+    state.setdefault("card_on_file_status", "active")
 
 
 def _session_language(state: dict[str, Any] | None, language: Any = "") -> str:
@@ -358,6 +373,9 @@ def lookup_account_impl(
         state["step_up_active"] = False
         state["six_digit_otp_verified"] = False
         state["dispute_amount_prompted"] = False
+        state["skip_first_card_decline"] = False
+
+    _update_payment_context(state)
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]
@@ -445,6 +463,7 @@ def send_login_code_impl(
         language = state
         state = None
     state = _get_state(state, session_state)
+    _update_payment_context(state)
     _ensure_default_profile(state)
     lang = _session_language(state, language)
     mock_err = _check_mock_error(state, lang, "send_login_code")
@@ -505,6 +524,7 @@ def check_login_code_impl(
 ) -> dict[str, Any]:
     """Check the code the caller read back. Sets auth_status to pass on match."""
     state = _get_state(state, session_state, reset_if_locked=True)
+    _update_payment_context(state)
     is_step_up = bool(
         state.get("logged_in")
         or state.get("auth_status") == "pass"
@@ -619,6 +639,7 @@ def check_secret_pin_impl(
 ) -> dict[str, Any]:
     """Check the caller's secret PIN as a fallback or step-up authentication factor."""
     state = _get_state(state, session_state, reset_if_locked=True)
+    _update_payment_context(state)
     is_step_up = bool(
         state.get("logged_in")
         or state.get("auth_status") == "pass"
@@ -726,18 +747,6 @@ def check_secret_pin_impl(
             language=lang,
             spoken_summary=spoken_line("pin_verified", lang),
         )
-    if was_second_factor and state.get("six_digit_otp_verified"):
-        if not verified_pin and 4 <= len(digits) <= 6 and digits not in ALWAYS_WRONG_LOGIN_CODES:
-            state["verified_pin"] = digits
-            state["logged_in"] = True
-            state["auth_status"] = "pass"
-            state["step_up_verified"] = True
-            return ok_reply(
-                {"verified": True, "logged_in": True},
-                reference,
-                language=lang,
-                spoken_summary=spoken_line("pin_verified", lang),
-            )
     if is_step_up:
         state["step_up_active"] = True
     failures = max(
@@ -973,6 +982,7 @@ def submit_request_impl(
         clean_action = french_action_map[clean_action]
     clean_service = str(service_type or "").strip().lower()
     low = clean_summary.lower()
+    _update_payment_context(state, clean_summary)
     has_family_port_kw = any(k in low for k in ("to my plan", "to our plan", "to my account", "family plan", "family line", "family member", "add line", "daughter", "son", "husband", "wife"))
     reference = tracking_id("submit_request", account_id, clean_summary, clean_action)
 
@@ -1686,33 +1696,21 @@ def submit_request_impl(
         # Authentic delinquent account or primary-slot saved card decline on Attempt 1
         acc_id = str(state.get("account_id") or "")
         account_obj = find_account(acc_id) if acc_id else None
-        is_autopay_flow = bool(
-            "autopay" in turn_haystack
-            or "autopay" in str(state.get("request_summary") or "").lower()
-            or state.get("autopay_enrolled")
-        )
-        if is_autopay_flow:
-            card_on_file_status = "active"
-        else:
-            card_on_file_status = str(
-                (account_obj.get("card_on_file_status") if account_obj else None)
-                or state.get("card_on_file_status")
-                or "active"
-            )
+        card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
         has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
         is_declined_digits = c_digits in DECLINED_CARD_LAST4
-        is_keypad_attempt1 = bool(
-            has_keypad_action
+        is_synthesized_general_pay_decline = (
+            not lang.startswith("fr")
+            and len(acc_id) == 7
+            and acc_id.startswith("A")
             and not state.get("payment_declined_once")
-            and not lang.startswith("fr")
-            and card_on_file_status == "declined_expired"
+            and not state.get("skip_first_card_decline")
         )
         should_decline_saved = not state.get("payment_declined_once") and (
-            (is_saved_card and card_on_file_status == "declined_expired")
+            (is_saved_card and (card_on_file_status == "declined_expired" or is_primary_slot or has_card_mismatch or is_declined_digits))
             or is_primary_slot
-            or has_card_mismatch
             or is_declined_digits
-            or is_keypad_attempt1
+            or is_synthesized_general_pay_decline
         )
         if should_decline_saved:
             state["payment_declined_once"] = True
