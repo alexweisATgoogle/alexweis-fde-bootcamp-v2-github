@@ -166,6 +166,7 @@ ERROR_CODES = (  # pragma: no cover
     "NO_PAYMENT_FOUND",
     "PHYSICAL_DAMAGE_EXCLUDED",
     "STEP_UP_REQUIRED",
+    "AMOUNT_REQUIRED",
 )
 
 ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
@@ -285,9 +286,17 @@ ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
         "Step-up verification is required before proceeding.",
         "Prompt the caller for their 4-digit secret security PIN on the keypad.",
     ),
+    "AMOUNT_REQUIRED": (
+        "Disputed charge amount is required.",
+        "Ask caller which charge and exact dollar amount they are disputing, then retry submit_request with that amount.",
+    ),
 }
 
 ERROR_CODE_DEFAULTS_FR: dict[str, tuple[str, str]] = {  # pragma: no cover
+    "AMOUNT_REQUIRED": (
+        "Le montant contesté est requis.",
+        "Demander à l'appelant le montant exact contesté, puis rappeler submit_request avec ce montant.",
+    ),
     "STEP_UP_REQUIRED": (
         "Une vérification supplémentaire est requise avant de continuer.",
         "Demander à l'appelant son NIP de sécurité à 4 chiffres sur le clavier.",
@@ -1050,6 +1059,8 @@ def lookup_account_impl(  # pragma: no cover
         state.pop("verified_pin", None)
         state["step_up_verified"] = False
         state["step_up_active"] = False
+        state["six_digit_otp_verified"] = False
+        state["dispute_amount_prompted"] = False
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]

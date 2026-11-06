@@ -450,6 +450,24 @@
       }
     },
     {
+      "name": "six_digit_otp_verified",
+      "description": "True when 6-digit OTP code has been verified for the session.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
+      "name": "dispute_amount_prompted",
+      "description": "True when caller was prompted for exact disputed charge amount.",
+      "schema": {
+        "type": "BOOLEAN",
+        "default": false,
+        "required": []
+      }
+    },
+    {
       "name": "outage_announce_pending",
       "description": "True when an active outage was found by outage_check, consumed by enforce_outage_utterance.",
       "schema": {

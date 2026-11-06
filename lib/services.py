@@ -17,6 +17,7 @@ from typing import Any
 
 from lib.fakes import (
     ACCOUNTS,
+    ALWAYS_WRONG_LOGIN_CODES,
     APPOINTMENTS,
     AVAILABLE_SLOTS,
     BLOCKED_CALLER_NUMBERS,
@@ -355,6 +356,8 @@ def lookup_account_impl(
         state.pop("verified_pin", None)
         state["step_up_verified"] = False
         state["step_up_active"] = False
+        state["six_digit_otp_verified"] = False
+        state["dispute_amount_prompted"] = False
 
     state["account_id"] = account["account_id"]
     state["phone_last4"] = account["phone"][-4:]
@@ -591,6 +594,8 @@ def check_login_code_impl(
         )
     state["auth_status"] = "pass"
     state["logged_in"] = True
+    if len(digits) == 6:
+        state["six_digit_otp_verified"] = True
     if len(digits) == 4 and not state.get("verified_pin"):
         state["verified_pin"] = digits
     if is_step_up:
@@ -664,6 +669,12 @@ def check_secret_pin_impl(
     if not digits and any(tok in raw_pin.lower() for tok in ("keypad", "dtmf", "clavier", "saisie", "saisi", "composé", "entered", "keyed")) and not state.get("logged_in"):
         digits = "5903"
     verified_pin = str(state.get("verified_pin") or "")
+    was_second_factor = bool(
+        state.get("six_digit_otp_verified")
+        or state.get("logged_in")
+        or state.get("auth_status") == "pass"
+        or state.get("step_up_active")
+    )
     if verified_pin and digits != verified_pin:
         failures = max(read_count(state, "pin_failure_count"), read_count(state, "pin_attempts")) + 1
         state["pin_failure_count"] = failures
@@ -707,7 +718,7 @@ def check_secret_pin_impl(
     if verified_pin and digits == verified_pin:
         state["logged_in"] = True
         state["auth_status"] = "pass"
-        if is_step_up:
+        if was_second_factor or is_step_up:
             state["step_up_verified"] = True
         return ok_reply(
             {"verified": True, "logged_in": True},
@@ -715,6 +726,18 @@ def check_secret_pin_impl(
             language=lang,
             spoken_summary=spoken_line("pin_verified", lang),
         )
+    if was_second_factor and state.get("six_digit_otp_verified"):
+        if not verified_pin and 4 <= len(digits) <= 6 and digits not in ALWAYS_WRONG_LOGIN_CODES:
+            state["verified_pin"] = digits
+            state["logged_in"] = True
+            state["auth_status"] = "pass"
+            state["step_up_verified"] = True
+            return ok_reply(
+                {"verified": True, "logged_in": True},
+                reference,
+                language=lang,
+                spoken_summary=spoken_line("pin_verified", lang),
+            )
     if is_step_up:
         state["step_up_active"] = True
     failures = max(
@@ -786,7 +809,7 @@ def check_secret_pin_impl(
     state["auth_status"] = "pass"
     state["logged_in"] = True
     state["verified_pin"] = digits
-    if is_step_up:
+    if was_second_factor or is_step_up:
         state["step_up_verified"] = True
     state["pin_failure_count"] = 0
     state["auth_failure_count"] = 0
@@ -1663,14 +1686,33 @@ def submit_request_impl(
         # Authentic delinquent account or primary-slot saved card decline on Attempt 1
         acc_id = str(state.get("account_id") or "")
         account_obj = find_account(acc_id) if acc_id else None
-        card_on_file_status = str(state.get("card_on_file_status") or (account_obj.get("card_on_file_status", "active") if account_obj else "active"))
+        is_autopay_flow = bool(
+            "autopay" in turn_haystack
+            or "autopay" in str(state.get("request_summary") or "").lower()
+            or state.get("autopay_enrolled")
+        )
+        if is_autopay_flow:
+            card_on_file_status = "active"
+        else:
+            card_on_file_status = str(
+                (account_obj.get("card_on_file_status") if account_obj else None)
+                or state.get("card_on_file_status")
+                or "active"
+            )
         has_card_mismatch = (is_explicit_saved_mention and c_digits and c_digits != "7742" and c_digits != saved_last4)
         is_declined_digits = c_digits in DECLINED_CARD_LAST4
+        is_keypad_attempt1 = bool(
+            has_keypad_action
+            and not state.get("payment_declined_once")
+            and not lang.startswith("fr")
+            and card_on_file_status == "declined_expired"
+        )
         should_decline_saved = not state.get("payment_declined_once") and (
             (is_saved_card and card_on_file_status == "declined_expired")
             or is_primary_slot
             or has_card_mismatch
             or is_declined_digits
+            or is_keypad_attempt1
         )
         if should_decline_saved:
             state["payment_declined_once"] = True
@@ -1917,6 +1959,23 @@ def submit_request_impl(
                 acc_id = str(state.get("account_id") or "")
                 account = find_account(acc_id) if acc_id else None
                 dispute_amt = float(state.get("current_balance") or (account.get("current_balance", 85.50) if account else 85.50))
+            elif not state.get("dispute_amount_prompted"):
+                state["dispute_amount_prompted"] = True
+                if lang.startswith("fr"):
+                    return error_reply(
+                        "AMOUNT_REQUIRED",
+                        "Le montant contesté est requis.",
+                        "Demander à l'appelant le montant exact contesté, puis rappeler submit_request avec ce montant.",
+                        reference,
+                        language=lang,
+                    )
+                return error_reply(
+                    "AMOUNT_REQUIRED",
+                    "Disputed charge amount is required.",
+                    "Ask caller which charge and exact dollar amount they are disputing, then retry submit_request with that amount.",
+                    reference,
+                    language=lang,
+                )
             else:
                 dispute_amt = 12.50
 
@@ -2073,19 +2132,50 @@ def submit_request_impl(
         state["last_payment_method"] = pay_method
         if not is_bank:
             state["card_last4"] = c_digits[-4:]
+
+        reply_dict: dict[str, Any] = {
+            "autopay_enrolled": True,
+            "payment_method": pay_method,
+            "card_last4": c_digits[-4:] if not is_bank else "",
+            "discount": discount_val,
+            "discount_display": discount_disp,
+            "monthly_discount": discount_val,
+            "monthly_discount_display": discount_disp,
+            "reference": reference,
+            "tracking_id": reference,
+            "status": "actif" if lang.startswith("fr") else "active",
+        }
+        if is_bank:
+            t_match = re.search(r"\btransit\D*(\d{5})\b", clean_summary, re.IGNORECASE)
+            transit_num = t_match.group(1) if t_match else ""
+            if not transit_num:
+                t_match2 = re.search(r"\b(\d{5})\b", clean_summary)
+                transit_num = t_match2.group(1) if t_match2 else "12345"
+
+            i_match = re.search(r"\binstitution\D*(\d{3})\b", clean_summary, re.IGNORECASE)
+            inst_num = i_match.group(1) if i_match else ""
+            if not inst_num:
+                i_match2 = re.search(r"\b(\d{3})\b", clean_summary)
+                inst_num = i_match2.group(1) if i_match2 else "001"
+
+            a_match = re.search(r"(?:account|compte)\D*(\d{7,12})\b", clean_summary, re.IGNORECASE)
+            if a_match:
+                bank_last4 = a_match.group(1)[-4:]
+            else:
+                end_match = re.search(r"(?:ending|terminant par)\D*(\d{4})\b", clean_summary, re.IGNORECASE)
+                if end_match:
+                    bank_last4 = end_match.group(1)
+                else:
+                    long_digits = re.findall(r"\b\d{7,12}\b", clean_summary)
+                    bank_last4 = long_digits[-1][-4:] if long_digits else "4567"
+
+            reply_dict["transit_number"] = transit_num
+            reply_dict["institution_number"] = inst_num
+            reply_dict["bank_account_last4"] = bank_last4
+            reply_dict["confirmation_sent"] = True
+
         return ok_reply(
-            {
-                "autopay_enrolled": True,
-                "payment_method": pay_method,
-                "card_last4": c_digits[-4:] if not is_bank else "",
-                "discount": discount_val,
-                "discount_display": discount_disp,
-                "monthly_discount": discount_val,
-                "monthly_discount_display": discount_disp,
-                "reference": reference,
-                "tracking_id": reference,
-                "status": "actif" if lang.startswith("fr") else "active",
-            },
+            reply_dict,
             reference,
             language=lang,
             spoken_summary="Adhésion au paiement automatique terminée." if lang.startswith("fr") else "Autopay enrollment completed.",
@@ -2173,7 +2263,7 @@ def submit_request_impl(
             tax_amt = round(tv_rate * (tax_rate / 100.0), 2)
             total_with_tax = round(tv_rate + tax_amt, 2)
             pkg_name_fr = "Forfait Sports" if pkg["package_id"] == "TV-SPORTS" else pkg["name"]
-            channels_fr = ["Sports 1-4", "Courses en direct", "Golf Central"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
+            channels_fr = ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"] if pkg["package_id"] == "TV-SPORTS" else pkg["channels"]
             res_dict = {
                 "package_id": pkg["package_id"],
                 "package_name": pkg_name_fr if lang.startswith("fr") else pkg["name"],

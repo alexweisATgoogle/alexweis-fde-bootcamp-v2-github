@@ -429,9 +429,13 @@ def test_tv_troubleshooting_sms_link() -> None:
 
 def test_dispute_nan_amount_guard() -> None:
     st = {"logged_in": True, "account_id": "A1001"}
-    r = submit_request_impl("Dispute unexpected charge", action="dispute", amount=float("nan"), state=st)
-    assert r["status"] == "ok"
-    assert r["data"]["refund_approved"] is True
+    r1 = submit_request_impl("Dispute unexpected charge", action="dispute", amount=float("nan"), state=st)
+    assert r1["status"] == "error"
+    assert r1["error"] == "AMOUNT_REQUIRED"
+    assert st.get("dispute_amount_prompted") is True
+    r2 = submit_request_impl("Dispute unexpected charge", action="dispute", amount=float("nan"), state=st)
+    assert r2["status"] == "ok"
+    assert r2["data"]["refund_approved"] is True
 
 
 def test_destination_phone_and_warranty_precedence() -> None:
@@ -1362,7 +1366,7 @@ def test_adv_iter12_5_tv_catalog_french_localization() -> None:
     assert res["status"] == "ok"
     data = res["data"]
     assert data["package_name"] == "Forfait Sports"
-    assert data["channels"] == ["Sports 1-4", "Courses en direct", "Golf Central"]
+    assert data["channels"] == ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"]
     assert "plans" in data
     assert len(data["plans"]) == 1
     assert data["plans"][0]["package_name"] == "Forfait Sports"
@@ -1533,4 +1537,61 @@ def test_iter15_ve_12_disable_mfa_step_up_enforcement() -> None:
     assert res_fr["status"] == "error"
     assert res_fr["error"] == "STEP_UP_REQUIRED"
     assert "Une vérification supplémentaire" in res_fr["error_message"]
+
+
+def test_iter15_ve_64_autopay_bank_fields() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    res = submit_request_impl(
+        "Enroll bank autopay with transit 12345, institution 001, and account ending 4567",
+        action="enroll_autopay",
+        state=st,
+    )
+    assert res["status"] == "ok"
+    assert res["data"]["transit_number"] == "12345"
+    assert res["data"]["institution_number"] == "001"
+    assert res["data"]["bank_account_last4"] == "4567"
+    assert res["data"]["confirmation_sent"] is True
+
+
+def test_iter15_ve_69_sports_channels() -> None:
+    res = submit_request_impl("Sports channels", action="search_plans", service_type="tv", state={})
+    assert res["status"] == "ok"
+    channels = res["data"]["channels"]
+    for ch in ["TSN", "Sportsnet", "ESPN", "Fox Sports", "RDS"]:
+        assert ch in channels
+
+
+def test_iter15_ve_09_dispute_amount_prompted() -> None:
+    st = {"account_id": "A1001", "logged_in": True}
+    # Turn 1: dispute without amount returns AMOUNT_REQUIRED
+    r1 = submit_request_impl("Dispute unexpected charge on my bill", action="dispute", state=st)
+    assert r1["status"] == "error"
+    assert r1["error"] == "AMOUNT_REQUIRED"
+    assert st["dispute_amount_prompted"] is True
+
+    # Turn 2: dispute with clarified amount succeeds
+    r2 = submit_request_impl("Dispute $15 charge on my bill", action="dispute", amount=15.0, state=st)
+    assert r2["status"] == "ok"
+    assert r2["data"]["refund_approved"] is True
+    assert r2["data"]["amount"] == 15.0
+
+
+def test_iter15_ve_13_otp_then_pin_step_up() -> None:
+    st = {}
+    lookup_account_impl("416-555-0192", state=st)
+    send_login_code_impl(state=st)
+    # Caller authenticates with 6-digit OTP
+    r_otp = check_login_code_impl("271846", state=st)
+    assert r_otp["status"] == "ok"
+    assert st["six_digit_otp_verified"] is True
+
+    # Now step-up for MFA disable with a 4-digit PIN
+    r_pin = check_secret_pin_impl("5903", state=st)
+    assert r_pin["status"] == "ok"
+    assert st["step_up_verified"] is True
+
+    # MFA disable now succeeds
+    res = submit_request_impl("Disable two factor authentication", action="disable_mfa", state=st)
+    assert res["status"] == "ok"
+    assert res["data"]["mfa_enabled"] is False
 

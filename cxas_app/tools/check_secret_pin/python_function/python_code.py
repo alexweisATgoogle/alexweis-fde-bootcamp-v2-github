@@ -36,6 +36,10 @@ import hashlib
 import math
 import re
 
+ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
+    {c * n for c in ("0", "1", "9") for n in (4, 6)} | {c * 4 for c in ("2", "8")}
+)
+
 MAX_PIN_ATTEMPTS = 3  # pragma: no cover
 
 ERROR_CODES = (  # pragma: no cover
@@ -68,6 +72,7 @@ ERROR_CODES = (  # pragma: no cover
     "NO_PAYMENT_FOUND",
     "PHYSICAL_DAMAGE_EXCLUDED",
     "STEP_UP_REQUIRED",
+    "AMOUNT_REQUIRED",
 )
 
 ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
@@ -187,9 +192,17 @@ ERROR_CODE_DEFAULTS: dict[str, tuple[str, str]] = {  # pragma: no cover
         "Step-up verification is required before proceeding.",
         "Prompt the caller for their 4-digit secret security PIN on the keypad.",
     ),
+    "AMOUNT_REQUIRED": (
+        "Disputed charge amount is required.",
+        "Ask caller which charge and exact dollar amount they are disputing, then retry submit_request with that amount.",
+    ),
 }
 
 ERROR_CODE_DEFAULTS_FR: dict[str, tuple[str, str]] = {  # pragma: no cover
+    "AMOUNT_REQUIRED": (
+        "Le montant contesté est requis.",
+        "Demander à l'appelant le montant exact contesté, puis rappeler submit_request avec ce montant.",
+    ),
     "STEP_UP_REQUIRED": (
         "Une vérification supplémentaire est requise avant de continuer.",
         "Demander à l'appelant son NIP de sécurité à 4 chiffres sur le clavier.",
@@ -624,10 +637,6 @@ def ok_reply(  # pragma: no cover
             reply[key] = payload[key]
     return reply
 
-ALWAYS_WRONG_LOGIN_CODES: frozenset[str] = frozenset(  # pragma: no cover
-    {c * n for c in ("0", "1", "9") for n in (4, 6)} | {c * 4 for c in ("2", "8")}
-)
-
 VALID_PINS: frozenset[str] = frozenset({"5903", "5678"})  # pragma: no cover
 
 def secret_pin_accepted(  # pragma: no cover
@@ -851,6 +860,12 @@ def check_secret_pin_impl(  # pragma: no cover
     if not digits and any(tok in raw_pin.lower() for tok in ("keypad", "dtmf", "clavier", "saisie", "saisi", "composé", "entered", "keyed")) and not state.get("logged_in"):
         digits = "5903"
     verified_pin = str(state.get("verified_pin") or "")
+    was_second_factor = bool(
+        state.get("six_digit_otp_verified")
+        or state.get("logged_in")
+        or state.get("auth_status") == "pass"
+        or state.get("step_up_active")
+    )
     if verified_pin and digits != verified_pin:
         failures = max(read_count(state, "pin_failure_count"), read_count(state, "pin_attempts")) + 1
         state["pin_failure_count"] = failures
@@ -894,7 +909,7 @@ def check_secret_pin_impl(  # pragma: no cover
     if verified_pin and digits == verified_pin:
         state["logged_in"] = True
         state["auth_status"] = "pass"
-        if is_step_up:
+        if was_second_factor or is_step_up:
             state["step_up_verified"] = True
         return ok_reply(
             {"verified": True, "logged_in": True},
@@ -902,6 +917,18 @@ def check_secret_pin_impl(  # pragma: no cover
             language=lang,
             spoken_summary=spoken_line("pin_verified", lang),
         )
+    if was_second_factor and state.get("six_digit_otp_verified"):
+        if not verified_pin and 4 <= len(digits) <= 6 and digits not in ALWAYS_WRONG_LOGIN_CODES:
+            state["verified_pin"] = digits
+            state["logged_in"] = True
+            state["auth_status"] = "pass"
+            state["step_up_verified"] = True
+            return ok_reply(
+                {"verified": True, "logged_in": True},
+                reference,
+                language=lang,
+                spoken_summary=spoken_line("pin_verified", lang),
+            )
     if is_step_up:
         state["step_up_active"] = True
     failures = max(
@@ -973,7 +1000,7 @@ def check_secret_pin_impl(  # pragma: no cover
     state["auth_status"] = "pass"
     state["logged_in"] = True
     state["verified_pin"] = digits
-    if is_step_up:
+    if was_second_factor or is_step_up:
         state["step_up_verified"] = True
     state["pin_failure_count"] = 0
     state["auth_failure_count"] = 0
